@@ -1,6 +1,6 @@
 # TalkSense — речевая аналитика для точек продаж
 
-[![ci](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/ci.yml)
+[![ci](https://github.com/getaway3/talksense/actions/workflows/ci.yml/badge.svg)](https://github.com/getaway3/talksense/actions/workflows/ci.yml)
 
 **Лабораторные работы №3–5: проектирование, реализация и CI/CD микросервисной системы**
 Дисциплина «Распределённые и облачные системы» · Выполнила: Акобян Г.П., гр. ВМО42 · Принял: Булыгин Р.Д.
@@ -97,8 +97,7 @@ ruff check .                            # линтер
 
 ## ЛР5. CI/CD
 
-**Пайплайн:** https://github.com/OWNER/REPO/actions/workflows/ci.yml *(заменить OWNER/REPO после публикации репозитория,
-так же в бейдже вверху)*. Подробно: [docs/cicd.md](docs/cicd.md).
+**Пайплайн:** https://github.com/getaway3/talksense/actions/workflows/ci.yml. Подробно: [docs/cicd.md](docs/cicd.md).
 
 Платформа: **GitHub Actions**. Код уже на GitHub, реестр GHCR встроен, секрет реестра выдаётся автоматически
 (`GITHUB_TOKEN`), а матрица и переиспользуемый workflow описывают пайплайн сервиса один раз для всех образов.
