@@ -112,7 +112,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ steps.meta.outputs.name }}
 
       - name: Scan image (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         env:                                          # после push образ сканируется прямо из GHCR
           TRIVY_USERNAME: ${{ inputs.publish && github.actor || '' }}
           TRIVY_PASSWORD: ${{ inputs.publish && secrets.GITHUB_TOKEN || '' }}
