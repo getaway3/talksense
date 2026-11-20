@@ -348,7 +348,9 @@ npx @redocly/cli lint api/*-service.yaml       # конфигурация в red
 npx @asyncapi/cli validate api/asyncapi.yaml
 ```
 
-Результат: `Your API descriptions are valid` — 0 ошибок, 0 предупреждений; AsyncAPI — `valid`. Каждый файл
+Результат (запуск из корня репозитория): `Your API descriptions are valid` — 0 ошибок, 0 предупреждений; AsyncAPI — `valid`.
+В `redocly.yaml` отключено только правило `no-unused-components`: схемы событий лежат в `components/schemas`, но на них
+ссылаются не пути OpenAPI, а `asyncapi.yaml` (без этой настройки линтер выдаёт 20 таких предупреждений и ни одной ошибки). Каждый файл
 открывается в [Swagger Editor](https://editor.swagger.io) без ошибок (внешних `$ref` нет).
 
 ---
