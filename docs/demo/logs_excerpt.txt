@@ -1,0 +1,14 @@
+00:34:17,173 INFO    transcription-service [cid=8da1acce-fa09-4061-81b9-8f5e7008ee33] talksense.events: получено recording.uploaded (попытка 1)
+00:34:17,225 INFO    analysis-service [cid=8da1acce-fa09-4061-81b9-8f5e7008ee33] talksense.events: получено transcription.completed (попытка 1)
+00:34:17,226 INFO    recording-service [cid=8da1acce-fa09-4061-81b9-8f5e7008ee33] talksense.events: получено transcription.completed (попытка 1)
+00:34:17,227 INFO    transcription-service [cid=8da1acce-fa09-4061-81b9-8f5e7008ee33] talksense.events: опубликовано transcription.completed
+00:34:17,326 INFO    recording-service [cid=8da1acce-fa09-4061-81b9-8f5e7008ee33] talksense.events: получено analysis.completed (попытка 1)
+00:34:17,328 INFO    report-service [cid=8da1acce-fa09-4061-81b9-8f5e7008ee33] talksense.events: получено analysis.completed (попытка 1)
+00:34:17,767 WARNING transcription-service [cid=ca6d3953-9cbf-4b77-90ab-e97b080dfc35] transcription-service: распознавание ca6d3953-9cbf-4b77-90ab-e97b080dfc35: попытка 1/3 не удалась (SpeechKit HTTP 503)
+00:34:17,768 WARNING transcription-service [cid=ca6d3953-9cbf-4b77-90ab-e97b080dfc35] talksense.events: повтор e08240a9-5e8d-4300-955d-d3e62b5cc1a8 через 2000 мс: SpeechKit HTTP 503
+00:34:19,770 INFO    transcription-service [cid=ca6d3953-9cbf-4b77-90ab-e97b080dfc35] talksense.events: получено recording.uploaded (попытка 2)
+00:34:19,782 WARNING transcription-service [cid=ca6d3953-9cbf-4b77-90ab-e97b080dfc35] talksense.events: повтор e08240a9-5e8d-4300-955d-d3e62b5cc1a8 через 5000 мс: SpeechKit HTTP 503
+00:34:19,782 WARNING transcription-service [cid=ca6d3953-9cbf-4b77-90ab-e97b080dfc35] transcription-service: распознавание ca6d3953-9cbf-4b77-90ab-e97b080dfc35: попытка 2/3 не удалась (SpeechKit HTTP 503)
+00:34:24,785 INFO    transcription-service [cid=ca6d3953-9cbf-4b77-90ab-e97b080dfc35] talksense.events: получено recording.uploaded (попытка 3)
+00:34:24,797 INFO    recording-service [cid=ca6d3953-9cbf-4b77-90ab-e97b080dfc35] talksense.events: получено transcription.failed (попытка 1)
+00:34:24,797 INFO    transcription-service [cid=ca6d3953-9cbf-4b77-90ab-e97b080dfc35] talksense.events: опубликовано transcription.failed

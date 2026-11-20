@@ -1,0 +1,116 @@
+# TalkSense — локальный запуск (ЛР4).
+#   docker compose up -d --build
+#   python demo/run_demo.py              # демонстрация сценариев через шлюз http://localhost:8080
+#
+# Реальные компоненты: 6 сервисов, RabbitMQ, API Gateway (Nginx).
+# Моки: Yandex SpeechKit и GigaChat (mocks/), MinIO -> том audio, PostgreSQL/MongoDB/Redis -> SQLite в томах.
+
+x-service: &service
+  restart: unless-stopped
+  networks: [internal]
+  depends_on:
+    rabbitmq:
+      condition: service_healthy
+
+x-env: &env
+  RABBITMQ_URL: amqp://talksense:talksense@rabbitmq:5672/
+  SERVICE_TOKEN: ${SERVICE_TOKEN:-dev-service-token}
+  LOG_LEVEL: INFO
+
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: talksense
+      RABBITMQ_DEFAULT_PASS: talksense
+    ports:
+      - "15672:15672"        # веб-консоль RabbitMQ для демонстрации очередей (talksense / talksense)
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  venue-service:
+    <<: *service
+    build: { context: ./services, dockerfile: venue-service/Dockerfile }
+    environment: { <<: *env, SEED_DEMO: "1" }
+    volumes: [venue-data:/data]
+
+  device-service:
+    <<: *service
+    build: { context: ./services, dockerfile: device-service/Dockerfile }
+    environment: { <<: *env, SEED_DEMO: "1", VENUE_URL: "http://venue-service:8000" }
+    volumes: [device-data:/data]
+
+  recording-service:
+    <<: *service
+    build: { context: ./services, dockerfile: recording-service/Dockerfile }
+    environment:
+      <<: *env
+      DEVICE_URL: http://device-service:8000
+      SELF_URL: http://recording-service:8000
+      AUDIO_DIR: /data/audio
+      AUDIO_SIGN_KEY: ${AUDIO_SIGN_KEY:-dev-audio-sign-key}
+    volumes: [recording-data:/data]
+
+  transcription-service:
+    <<: *service
+    build: { context: ./services, dockerfile: transcription-service/Dockerfile }
+    environment:
+      <<: *env
+      RECORDING_URL: http://recording-service:8000
+      SPEECHKIT_URL: http://speechkit-mock:8000       # реальный: https://stt.api.cloud.yandex.net
+      SPEECHKIT_API_KEY: ${SPEECHKIT_API_KEY:-mock-key}
+    volumes: [transcription-data:/data]
+
+  analysis-service:
+    <<: *service
+    build: { context: ./services, dockerfile: analysis-service/Dockerfile }
+    environment:
+      <<: *env
+      TRANSCRIPTION_URL: http://transcription-service:8000
+      VENUE_URL: http://venue-service:8000
+      GIGACHAT_URL: http://gigachat-mock:8000         # реальный: https://gigachat.devices.sberbank.ru
+      GIGACHAT_AUTH_URL: http://gigachat-mock:8000    # реальный: https://ngw.devices.sberbank.ru:9443
+      GIGACHAT_AUTH_KEY: ${GIGACHAT_AUTH_KEY:-mock-key}
+    volumes: [analysis-data:/data]
+
+  report-service:
+    <<: *service
+    build: { context: ./services, dockerfile: report-service/Dockerfile }
+    environment: { <<: *env, VENUE_URL: "http://venue-service:8000" }
+    volumes: [report-data:/data]
+
+  speechkit-mock:
+    build: { context: ./mocks, dockerfile: Dockerfile, args: { MOCK: speechkit } }
+    networks: [internal]
+    ports: ["8091:8000"]     # открыт только для переключения режима сбоя в демо (/__admin/mode)
+
+  gigachat-mock:
+    build: { context: ./mocks, dockerfile: Dockerfile, args: { MOCK: gigachat } }
+    networks: [internal]
+    ports: ["8092:8000"]
+
+  gateway:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports: ["8080:80"]       # единственная точка входа для клиентов
+    volumes: ["./gateway/nginx.conf:/etc/nginx/conf.d/default.conf:ro"]
+    depends_on: [venue-service, device-service, recording-service, transcription-service, analysis-service,
+                 report-service]
+    networks: [internal, public]
+
+networks:
+  internal: {}
+  public: {}
+
+volumes:
+  venue-data: {}
+  device-data: {}
+  recording-data: {}
+  transcription-data: {}
+  analysis-data: {}
+  report-data: {}

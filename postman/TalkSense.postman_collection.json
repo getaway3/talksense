@@ -1,0 +1,1002 @@
+{
+  "info": {
+    "name": "TalkSense (ЛР4)",
+    "_postman_id": "6f1d2a9e-3c55-4f0b-9a1e-2b7c8d9e0f11",
+    "description": "Запросы к системе TalkSense через API Gateway. Запускать после docker compose up. Аудио для загрузки: demo/audio/*.ogg (создаются `python demo/make_audio.py`).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "gateway",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "venueId",
+      "value": "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+    },
+    {
+      "key": "orgId",
+      "value": "1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed"
+    },
+    {
+      "key": "deviceToken",
+      "value": "dvt_demo_5f8c1e0a9b7d4c2e8f6a3b1d"
+    },
+    {
+      "key": "date",
+      "value": "2026-11-21"
+    },
+    {
+      "key": "recordingId",
+      "value": ""
+    },
+    {
+      "key": "incidentId",
+      "value": ""
+    },
+    {
+      "key": "menuItemId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Заведения и меню (venue-service)",
+      "item": [
+        {
+          "name": "Список заведений",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway}}/api/v1/venues?organizationId={{orgId}}&page=0&size=20",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "venues"
+              ],
+              "query": [
+                {
+                  "key": "organizationId",
+                  "value": "{{orgId}}"
+                },
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "size",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Создать заведение (Idempotency-Key)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway}}/api/v1/venues",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "venues"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"organizationId\": \"{{orgId}}\",\n  \"name\": \"Пекарня «Колос»\",\n  \"address\": \"Ростов-на-Дону, пр. Ворошиловский, 5\",\n  \"type\": \"BAKERY\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Меню",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway}}/api/v1/venues/{{venueId}}/menu",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "venues",
+                "{{venueId}}",
+                "menu"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set(\"menuItemId\", pm.response.json()[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Позиция закончилась (available=false)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway}}/api/v1/venues/{{venueId}}/menu/{{menuItemId}}",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "venues",
+                "{{venueId}}",
+                "menu",
+                "{{menuItemId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Раф лавандовый\",\n  \"category\": \"Кофе\",\n  \"aliases\": [\n    \"лавандовый раф\"\n  ],\n  \"price\": 320,\n  \"available\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Устройства (device-service)",
+      "item": [
+        {
+          "name": "Зарегистрировать устройство",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway}}/api/v1/devices",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "devices"
+              ]
+            },
+            "description": "Синхронно вызывает venue-service (S1). Токен в ответе показывается один раз.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"serialNumber\": \"{{serial}}\",\n  \"venueId\": \"{{venueId}}\",\n  \"placement\": \"Касса №2\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('serial', 'TS-REC-' + String(Math.floor(Math.random() * 1e6)).padStart(6, '0'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Heartbeat устройства",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Device-Token",
+                "value": "{{deviceToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway}}/device/v1/heartbeat",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "device",
+                "v1",
+                "heartbeat"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firmwareVersion\": \"1.4.2\",\n  \"freeStorageMb\": 3120,\n  \"bufferedChunks\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Устройства заведения",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway}}/api/v1/devices?venueId={{venueId}}",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "devices"
+              ],
+              "query": [
+                {
+                  "key": "venueId",
+                  "value": "{{venueId}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Сквозной сценарий",
+      "item": [
+        {
+          "name": "Загрузить фрагмент (устройство)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Device-Token",
+                "value": "{{deviceToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway}}/device/v1/recordings",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "device",
+                "v1",
+                "recordings"
+              ]
+            },
+            "description": "recording-service проверяет токен (S2), сохраняет аудио и публикует recording.uploaded.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "audio",
+                  "type": "file",
+                  "src": "demo/audio/01_out_of_stock.ogg"
+                },
+                {
+                  "key": "startedAt",
+                  "value": "{{$isoTimestamp}}",
+                  "type": "text"
+                },
+                {
+                  "key": "durationSec",
+                  "value": "30",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"recordingId\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Статус обработки записи",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway}}/api/v1/recordings/{{recordingId}}",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "recordings",
+                "{{recordingId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"дошла до ANALYZED\", () => pm.expect(pm.response.json().status).to.eql(\"ANALYZED\"));"
+                ]
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "setTimeout(() => {}, 1500); // ждём обработку в конвейере"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Записи за день",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway}}/api/v1/recordings?venueId={{venueId}}&date={{date}}",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "recordings"
+              ],
+              "query": [
+                {
+                  "key": "venueId",
+                  "value": "{{venueId}}"
+                },
+                {
+                  "key": "date",
+                  "value": "{{date}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Инциденты за день",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway}}/api/v1/incidents?venueId={{venueId}}&from={{date}}&to={{date}}&type=OUT_OF_STOCK,CONFLICT",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "incidents"
+              ],
+              "query": [
+                {
+                  "key": "venueId",
+                  "value": "{{venueId}}"
+                },
+                {
+                  "key": "from",
+                  "value": "{{date}}"
+                },
+                {
+                  "key": "to",
+                  "value": "{{date}}"
+                },
+                {
+                  "key": "type",
+                  "value": "OUT_OF_STOCK,CONFLICT"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.json().items.length) pm.collectionVariables.set(\"incidentId\", pm.response.json().items[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Подтвердить инцидент",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway}}/api/v1/incidents/{{incidentId}}",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "incidents",
+                "{{incidentId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reviewStatus\": \"CONFIRMED\",\n  \"comment\": \"Сироп заказан\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Отчёт за день",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway}}/api/v1/reports/daily/{{venueId}}/{{date}}",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "reports",
+                "daily",
+                "{{venueId}}",
+                "{{date}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Отчёт за день (CSV)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway}}/api/v1/reports/daily/{{venueId}}/{{date}}/export",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "reports",
+                "daily",
+                "{{venueId}}",
+                "{{date}}",
+                "export"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Сбой и компенсация",
+      "item": [
+        {
+          "name": "SpeechKit-мок: режим сбоя",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:8091/__admin/mode",
+              "host": [
+                "http://localhost:8091"
+              ],
+              "path": [
+                "__admin",
+                "mode"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"fail\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Загрузить фрагмент при сбое",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Device-Token",
+                "value": "{{deviceToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway}}/device/v1/recordings",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "device",
+                "v1",
+                "recordings"
+              ]
+            },
+            "description": "Через ~7 с (повторы 2 и 5 с) запись перейдёт в FAILED_TRANSCRIPTION, аудио сохранится.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "audio",
+                  "type": "file",
+                  "src": "demo/audio/01_out_of_stock.ogg"
+                },
+                {
+                  "key": "startedAt",
+                  "value": "{{$isoTimestamp}}",
+                  "type": "text"
+                },
+                {
+                  "key": "durationSec",
+                  "value": "30",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"recordingId\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Статус (ожидаем FAILED_TRANSCRIPTION)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway}}/api/v1/recordings/{{recordingId}}",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "recordings",
+                "{{recordingId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "setTimeout(() => {}, 9000); // ждём обработку в конвейере"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "SpeechKit-мок: режим ok",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:8091/__admin/mode",
+              "host": [
+                "http://localhost:8091"
+              ],
+              "path": [
+                "__admin",
+                "mode"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"ok\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Перезапуск обработки",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway}}/api/v1/recordings/{{recordingId}}/reprocess",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "recordings",
+                "{{recordingId}}",
+                "reprocess"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 202\", () => pm.response.to.have.status(202));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Ошибки и безопасность",
+      "item": [
+        {
+          "name": "Internal недоступен через шлюз",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway}}/internal/v1/venues/{{venueId}}",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "internal",
+                "v1",
+                "venues",
+                "{{venueId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Чужой токен устройства → Problem 401",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Device-Token",
+                "value": "dvt_stolen"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway}}/device/v1/recordings",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "device",
+                "v1",
+                "recordings"
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "audio",
+                  "type": "file",
+                  "src": "demo/audio/01_out_of_stock.ogg"
+                },
+                {
+                  "key": "startedAt",
+                  "value": "{{$isoTimestamp}}",
+                  "type": "text"
+                },
+                {
+                  "key": "durationSec",
+                  "value": "30",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"problem+json\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/problem+json\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Валидация → Problem 400",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway}}/api/v1/incidents?venueId=not-uuid&from={{date}}&to={{date}}",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "incidents"
+              ],
+              "query": [
+                {
+                  "key": "venueId",
+                  "value": "not-uuid"
+                },
+                {
+                  "key": "from",
+                  "value": "{{date}}"
+                },
+                {
+                  "key": "to",
+                  "value": "{{date}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// дата отчёта = текущая дата UTC (startedAt фрагментов в UTC)",
+          "pm.collectionVariables.set('date', new Date().toISOString().slice(0, 10));"
+        ]
+      }
+    }
+  ]
+}

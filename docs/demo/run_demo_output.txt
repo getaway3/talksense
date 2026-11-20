@@ -1,0 +1,90 @@
+
+==============================================================================
+1. Успешный сценарий: фрагменты с устройства → отчёт за день
+==============================================================================
+  POST /device/v1/recordings  01_out_of_stock.txt    -> 201  id=8da1acce…  cid=e6aa05c3
+  POST /device/v1/recordings  02_menu_request.txt    -> 201  id=9d8fd614…  cid=e4fc0962
+  POST /device/v1/recordings  03_conflict.txt        -> 201  id=c4f9de84…  cid=363f142c
+  POST /device/v1/recordings  04_personal.txt        -> 201  id=fd151f00…  cid=24b10760
+  POST /device/v1/recordings  05_praise.txt          -> 201  id=049416b8…  cid=c342bc4e
+  01_out_of_stock.txt:
+      0.0 с  TRANSCRIBED
+      0.5 с  ANALYZED
+    итог: ANALYZED, инцидентов: 1, аудио удалено: True
+  02_menu_request.txt:
+      0.0 с  ANALYZED
+    итог: ANALYZED, инцидентов: 1, аудио удалено: True
+  03_conflict.txt:
+      0.0 с  ANALYZED
+    итог: ANALYZED, инцидентов: 1, аудио удалено: True
+  04_personal.txt:
+      0.0 с  DISCARDED  (PERSONAL_ONLY)
+    итог: DISCARDED, инцидентов: 0, аудио удалено: True
+  05_praise.txt:
+      0.0 с  ANALYZED
+    итог: ANALYZED, инцидентов: 1, аудио удалено: True
+
+  GET /api/v1/incidents → 10 инцидентов:
+    MENU_REQUEST  LOW    Гость просит добавить в меню «матча на кокосовом»
+    CONFLICT      HIGH   Конфликт с гостем: недовольство и повышенный тон
+    OUT_OF_STOCK  MEDIUM Гость спросил «лавандовый раф» — нет в наличии
+    PRAISE        LOW    Гость поблагодарил
+
+  GET /api/v1/reports/daily/{venue}/2026-11-20:
+  {
+    "venueName": "Кофейня «Зерно» на Садовой",
+    "recordingsAnalyzed": 10,
+    "totals": {
+      "CONFLICT": 2,
+      "OUT_OF_STOCK": 3,
+      "MENU_REQUEST": 2,
+      "COMPLAINT": 0,
+      "PRAISE": 3,
+      "SERVICE_ISSUE": 0
+    },
+    "outOfStock": [
+      {
+        "name": "Раф лавандовый",
+        "menuItemId": "f0a5ccbf-f53d-4c99-a730-f891bb4b8237",
+        "count": 3
+      }
+    ],
+    "menuRequests": [
+      {
+        "name": "матча на кокосовом",
+        "menuItemId": null,
+        "count": 2
+      }
+    ],
+    "highlights": [
+      "21:33 — Конфликт с гостем: недовольство и повышенный тон (HIGH)",
+      "21:34 — Конфликт с гостем: недовольство и повышенный тон (HIGH)"
+    ]
+  }
+
+==============================================================================
+2. Сбой SpeechKit → компенсация → перезапуск
+==============================================================================
+  speechkit-mock переведён в режим fail (HTTP 503)
+      0.0 с  UPLOADED
+      7.0 с  FAILED_TRANSCRIPTION  (PROVIDER_UNAVAILABLE: SpeechKit HTTP 503)
+    аудио сохранено для повтора: audioPurged=False
+  speechkit-mock снова ok; POST /api/v1/recordings/{id}/reprocess
+    -> 202, attempt=2
+      0.0 с  UPLOADED
+      0.5 с  ANALYZED
+    итог: ANALYZED, аудио удалено: True
+
+==============================================================================
+3. Идемпотентность загрузки
+==============================================================================
+  первая отправка -> 201, повтор -> 200 (Idempotent-Replayed: true), id совпадает: True
+
+==============================================================================
+4. Шлюз и единая модель ошибок
+==============================================================================
+  GET /internal/v1/venues/… через шлюз -> 404 application/problem+json
+  загрузка с чужим токеном -> 401
+  {"type": "https://talksense.local/problems/unauthorized", "title": "Unauthorized", "status": 401, "detail": "Неизвестный токен устройства", "instance": "/device/v1/recordings", "traceId": "3b67169b0582b0722a031956b4b904fd"}
+
+Готово.
