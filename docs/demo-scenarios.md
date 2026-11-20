@@ -94,3 +94,14 @@ report-service        [cid=8da1acce…] получено analysis.completed (п�
    "detail": "Неизвестный токен устройства", "instance": "/device/v1/recordings", "traceId": "3b67169b…"}
   ```
 - Невалидный параметр (`venueId=not-uuid`) → `400` с полем `errors: [{"field": "venueId", ...}]`.
+
+## Скриншоты запуска в Docker (Windows, Docker Desktop)
+
+| Файл | Что показывает |
+|------|----------------|
+| `docs/screenshots/lab4-docker-compose-ps.png` | `docker compose ps`: все сервисы запущены, у сервисов статус `healthy` |
+| `docs/screenshots/lab4-demo-scenario1.png` | сценарий 1: успешный сквозной путь, отчёт за день |
+| `docs/screenshots/lab4-demo-scenarios2-4.png` | сбой SpeechKit с компенсацией, идемпотентность, ошибки шлюза |
+| `docs/screenshots/lab4-rabbitmq-queues.jpg` | консоль RabbitMQ: очереди `*.events`, `*.retry`, `*.dlq` |
+
+Скриншоты вывода команд сделаны из текста реального запуска `run_demo.py` и `docker compose ps`.
