@@ -1,0 +1,12 @@
+# Override для staging (ЛР5): вместо локальной сборки — образы, опубликованные пайплайном в GHCR.
+#   IMAGE_PREFIX=ghcr.io/<owner>/talksense IMAGE_TAG=<sha7> \
+#   docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d --no-build
+services:
+  venue-service:         { image: "${IMAGE_PREFIX}-venue-service:${IMAGE_TAG}" }
+  device-service:        { image: "${IMAGE_PREFIX}-device-service:${IMAGE_TAG}" }
+  recording-service:     { image: "${IMAGE_PREFIX}-recording-service:${IMAGE_TAG}" }
+  transcription-service: { image: "${IMAGE_PREFIX}-transcription-service:${IMAGE_TAG}" }
+  analysis-service:      { image: "${IMAGE_PREFIX}-analysis-service:${IMAGE_TAG}" }
+  report-service:        { image: "${IMAGE_PREFIX}-report-service:${IMAGE_TAG}" }
+  speechkit-mock:        { image: "${IMAGE_PREFIX}-speechkit-mock:${IMAGE_TAG}" }
+  gigachat-mock:         { image: "${IMAGE_PREFIX}-gigachat-mock:${IMAGE_TAG}" }

@@ -1,6 +1,8 @@
 # TalkSense — речевая аналитика для точек продаж
 
-**Лабораторная работа №3. Декомпозиция и проектирование микросервисной системы**
+[![ci](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/ci.yml)
+
+**Лабораторные работы №3–5: проектирование, реализация и CI/CD микросервисной системы**
 Дисциплина «Распределённые и облачные системы» · Выполнила: Акобян Г.П., гр. ВМО42 · Принял: Булыгин Р.Д.
 
 > Предметная область совпадает с темой ВКР: аппаратно-программный комплекс, который записывает разговоры
@@ -10,10 +12,11 @@
 |--------------|-------------|-----|
 | ЛР3. Проектирование | контексты, 6 сервисов, выбор ПО, схемы, OpenAPI + AsyncAPI | разделы 1–7 ниже, `docs/`, `api/` |
 | ЛР4. Реализация | 6 сервисов на FastAPI, RabbitMQ, сага с компенсациями, шлюз, моки, 89 тестов | [раздел «ЛР4»](#лр4-реализация-микросервисов), `services/`, `docs/demo-scenarios.md` |
+| ЛР5. CI/CD | GitHub Actions: lint → build → test → Docker → GHCR → staging + smoke-тест | [раздел «ЛР5»](#лр5-cicd), `.github/workflows/`, `docs/cicd.md` |
 
 ## Содержание
 
-0. [ЛР4. Реализация микросервисов](#лр4-реализация-микросервисов)
+0. [ЛР4. Реализация микросервисов](#лр4-реализация-микросервисов) · [ЛР5. CI/CD](#лр5-cicd)
 1. [Предметная область, акторы, сценарии](#1-предметная-область)
 2. [Доменные события и ограниченные контексты](#2-доменные-события-и-ограниченные-контексты)
 3. [Карточки сервисов и отвергнутые варианты](#3-сервисы)
@@ -89,6 +92,30 @@ ruff check .                            # линтер
 
 Сценарии, проверенные вживую (успешный путь, сбой SpeechKit с компенсацией и перезапуском, идемпотентность,
 ошибки), с выводом и логами: [docs/demo-scenarios.md](docs/demo-scenarios.md).
+
+---
+
+## ЛР5. CI/CD
+
+**Пайплайн:** https://github.com/OWNER/REPO/actions/workflows/ci.yml *(заменить OWNER/REPO после публикации репозитория,
+так же в бейдже вверху)*. Подробно: [docs/cicd.md](docs/cicd.md).
+
+Платформа: **GitHub Actions**. Код уже на GitHub, реестр GHCR встроен, секрет реестра выдаётся автоматически
+(`GITHUB_TOKEN`), а матрица и переиспользуемый workflow описывают пайплайн сервиса один раз для всех образов.
+
+| Этап | Что делает |
+|------|-----------|
+| api-contracts | `redocly lint` OpenAPI, `asyncapi validate` |
+| build | кэш pip, `ruff check`, `compileall` — для каждого из 6 сервисов (матрица, `service.yml`) |
+| test | unit/API-тесты сервиса + интеграционные тесты саги (89 тестов), JUnit-артефакты |
+| package | `docker build` 8 образов (6 сервисов + 2 мока), кэш слоёв, скан Trivy |
+| publish *(CD, main)* | push в `ghcr.io/<owner>/talksense-<name>:<sha7>` и `:latest` |
+| deploy *(CD, main)* | `docker compose up --wait` из опубликованных образов на раннере (`docker-compose.staging.yml`), smoke-тест `demo/run_demo.py` через шлюз |
+
+Триггеры: `push` и `pull_request` в `main`, ручной запуск. Падение тестов любого сервиса блокирует сборку его образа
+и деплой ([пример](docs/cicd.md#3-неуспешный-прогон)).
+
+Проверить локально: `pip install -r services/requirements-dev.txt && bash scripts/ci-local.sh`.
 
 ---
 
@@ -433,7 +460,10 @@ npx @asyncapi/cli validate api/asyncapi.yaml
 
 ```
 ├── README.md                     # этот отчёт
+├── .github/workflows/            # ЛР5: ci.yml + переиспользуемый service.yml
 ├── docker-compose.yml            # ЛР4: локальный запуск всей системы
+├── docker-compose.staging.yml    # ЛР5: staging из образов GHCR
+├── scripts/ci-local.sh           # ЛР5: проверки пайплайна локально
 ├── gateway/nginx.conf            # ЛР4: API Gateway
 ├── services/
 │   ├── common/talksense_common/  # общая библиотека: ошибки, события, outbox, HTTP-клиент
@@ -444,6 +474,7 @@ npx @asyncapi/cli validate api/asyncapi.yaml
 ├── postman/                      # ЛР4: коллекция запросов
 ├── redocly.yaml                  # правила линтера OpenAPI
 ├── docs/
+│   ├── cicd.md                   # ЛР5: описание пайплайна
 │   ├── demo-scenarios.md         # ЛР4: проверенные сценарии
 │   ├── demo/                     # ЛР4: вывод демо и логи
 │   ├── architecture.drawio       # исходник схемы для draw.io
