@@ -111,3 +111,16 @@ bash scripts/ci-local.sh
 - [ ] шаг `Build & push` и пакеты в GHCR;
 - [ ] job `deploy to staging + smoke test`: вывод `run_demo.py`;
 - [ ] красный прогон из PR с упавшим тестом и пропущенными `docker image` / `deploy`.
+
+**Готовые скриншоты** (`docs/screenshots/`):
+
+| Файл | Что показывает |
+|------|----------------|
+| `cicd-green-run.jpg` | успешный прогон `ci` на `main`: lint → матрица сервисов → integration → deploy to staging |
+| `cicd-red-run.jpg` | красный прогон из Pull Request: сервис `analysis-service` упал, `deploy` пропущен |
+| `cicd-red-pr.png` | Pull Request #1 с красным крестиком у коммита (закрыт без слияния, ветка `demo/broken-test`) |
+| `github-repo.png` | главная страница репозитория |
+
+Ссылки: [успешный прогон](https://github.com/getaway3/talksense/actions/runs/44832127225),
+[красный прогон](https://github.com/getaway3/talksense/actions/runs/44833304755),
+[Pull Request](https://github.com/getaway3/talksense/pull/1).
