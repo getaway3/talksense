@@ -19,6 +19,10 @@ from pathlib import Path
 
 import httpx
 
+# Консоль Windows (cp1251) не умеет печатать «→» и кириллицу в UTF-8 — не падаем на выводе
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 HERE = Path(__file__).resolve().parent
 VENUE = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
 DEVICE_TOKEN = "dvt_demo_5f8c1e0a9b7d4c2e8f6a3b1d"
