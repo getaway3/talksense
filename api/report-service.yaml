@@ -1,0 +1,423 @@
+# report-service — Ежедневные выгрузки для сайта
+# ЛР3, система TalkSense. Сгенерировано из единого описания.
+openapi: 3.1.0
+info:
+  title: report-service
+  version: 1.0.0
+  summary: Ежедневные выгрузки для сайта
+  description: 'Подписан на analysis.completed: инкрементально обновляет отчёт заведения за день (счётчики по типам, чего
+    не было в наличии, что просили добавить в меню). Имя и часовой пояс точки получает синхронно из venue-service. Отдаёт
+    отчёты сайту, кэширует закрытые дни в Redis.'
+  contact:
+    name: Акобян Г.П., ВМО42
+  license:
+    name: MIT
+    identifier: MIT
+servers:
+- url: https://api.talksense.local
+  description: Через API Gateway (public)
+- url: http://report-service:8000
+  description: Внутренняя сеть (internal)
+security:
+- bearerAuth: []
+tags:
+- name: public
+  description: Внешние эндпоинты, доступны клиенту через API Gateway
+paths:
+  /api/v1/reports/daily:
+    get:
+      operationId: listDailyReports
+      summary: Ежедневные отчёты заведения за период
+      tags:
+      - public
+      parameters:
+      - in: query
+        name: venueId
+        required: true
+        schema: &id002
+          type: string
+          format: uuid
+      - in: query
+        name: from
+        required: true
+        schema: &id001
+          type: string
+          format: date
+      - in: query
+        name: to
+        required: true
+        schema: *id001
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Страница отчётов
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DailyReportPage'
+              example:
+                items:
+                - &id003
+                  venueId: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                  venueName: Кофейня «Зерно» на Садовой
+                  date: '2026-11-20'
+                  status: CLOSED
+                  recordingsAnalyzed: 214
+                  totals:
+                    CONFLICT: 1
+                    OUT_OF_STOCK: 4
+                    MENU_REQUEST: 2
+                    COMPLAINT: 0
+                    PRAISE: 3
+                    SERVICE_ISSUE: 1
+                  outOfStock:
+                  - name: Раф лавандовый
+                    menuItemId: 0d6e1f4a-2b6c-4f3e-9a51-6c0b7e1d2a33
+                    count: 3
+                  menuRequests:
+                  - name: Матча на кокосовом
+                    menuItemId: null
+                    count: 2
+                  highlights:
+                  - 14:20 — конфликт из-за долгого ожидания заказа (HIGH)
+                  generatedAt: '2026-11-21T00:00:05Z'
+                page:
+                  page: 0
+                  size: 20
+                  totalElements: 1
+                  totalPages: 1
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/reports/daily/{venueId}/{date}:
+    get:
+      operationId: getDailyReport
+      summary: Выгрузка инцидентов за день
+      tags:
+      - public
+      parameters:
+      - in: path
+        name: venueId
+        required: true
+        schema: *id002
+      - in: path
+        name: date
+        required: true
+        schema: *id001
+      responses:
+        '200':
+          description: Отчёт за день
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DailyReport'
+              example: *id003
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/reports/daily/{venueId}/{date}/export:
+    get:
+      operationId: exportDailyReport
+      summary: Скачать отчёт за день в CSV
+      tags:
+      - public
+      parameters:
+      - in: path
+        name: venueId
+        required: true
+        schema: *id002
+      - in: path
+        name: date
+        required: true
+        schema: *id001
+      responses:
+        '200':
+          description: CSV-файл
+          content:
+            text/csv:
+              schema:
+                type: string
+              example: 'time;type;severity;summary
+
+                10:15;OUT_OF_STOCK;MEDIUM;Гость спросил лавандовый раф
+
+                '
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access-токен Keycloak (OpenID Connect). Проверяется на API Gateway.
+    serviceAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Токен сервисной учётной записи Keycloak (client credentials) для internal-вызовов.
+    deviceAuth:
+      type: apiKey
+      in: header
+      name: X-Device-Token
+      description: Секрет устройства, выданный device-service при активации.
+  parameters:
+    Page:
+      in: query
+      name: page
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+      description: Номер страницы (с 0)
+    Size:
+      in: query
+      name: size
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+      description: Размер страницы
+  responses:
+    Unauthorized:
+      description: Нет или неверный токен
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://talksense.local/problems/unauthorized
+            title: Unauthorized
+            status: 401
+            detail: Bearer-токен отсутствует или истёк
+            traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+    NotFound:
+      description: Не найдено
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://talksense.local/problems/not-found
+            title: Not found
+            status: 404
+            detail: Объект не найден
+            traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+  schemas:
+    Problem:
+      type: object
+      description: Единая модель ошибки во всех сервисах (RFC 9457 / RFC 7807 Problem Details).
+      required:
+      - type
+      - title
+      - status
+      properties:
+        type:
+          type: string
+          format: uri
+          example: https://talksense.local/problems/not-found
+        title:
+          type: string
+          example: Ресурс не найден
+        status:
+          type: integer
+          example: 404
+        detail:
+          type: string
+          example: Заведение 7c9e... не найдено
+        instance:
+          type: string
+          example: /api/v1/venues/7c9e6679-7425-40de-944b-e07fc1f90ae7
+        traceId:
+          type: string
+          example: 4bf92f3577b34da6a3ce929d0e0e4736
+        errors:
+          type: array
+          description: Ошибки валидации по полям (для 400/422)
+          items:
+            type: object
+            required:
+            - field
+            - message
+            properties:
+              field:
+                type: string
+              message:
+                type: string
+    PageMeta:
+      type: object
+      required:
+      - page
+      - size
+      - totalElements
+      - totalPages
+      properties:
+        page:
+          type: integer
+          minimum: 0
+          example: 0
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+          example: 20
+        totalElements:
+          type: integer
+          example: 42
+        totalPages:
+          type: integer
+          example: 3
+    EventEnvelope:
+      type: object
+      description: Конверт всех асинхронных сообщений. Полезная нагрузка — в payload.
+      required:
+      - eventId
+      - eventType
+      - schemaVersion
+      - occurredAt
+      - correlationId
+      - producer
+      - payload
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: Уникален для сообщения; потребители хранят обработанные eventId (дедупликация)
+        eventType:
+          type: string
+          example: recording.uploaded
+        schemaVersion:
+          type: integer
+          example: 1
+        occurredAt: &id004
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+          format: uuid
+          description: Сквозной идентификатор саги = recordingId
+        producer:
+          type: string
+          example: recording-service
+        payload:
+          type: object
+    DailyReport:
+      type: object
+      required:
+      - venueId
+      - date
+      - status
+      - totals
+      properties:
+        venueId: *id002
+        venueName:
+          type: string
+        date: *id001
+        status:
+          type: string
+          enum:
+          - IN_PROGRESS
+          - CLOSED
+          description: CLOSED — день закрыт (через 2 часа после окончания работы точки)
+        recordingsAnalyzed:
+          type: integer
+        totals:
+          type: object
+          additionalProperties:
+            type: integer
+          example:
+            CONFLICT: 1
+            OUT_OF_STOCK: 4
+            MENU_REQUEST: 2
+            COMPLAINT: 0
+            PRAISE: 3
+            SERVICE_ISSUE: 1
+        outOfStock:
+          type: array
+          items:
+            $ref: '#/components/schemas/ItemCount'
+        menuRequests:
+          type: array
+          items:
+            $ref: '#/components/schemas/ItemCount'
+        highlights:
+          type: array
+          items:
+            type: string
+          description: Самые важные инциденты дня
+        generatedAt: *id004
+    ItemCount:
+      type: object
+      required:
+      - name
+      - count
+      properties:
+        name:
+          type: string
+        menuItemId:
+          oneOf:
+          - *id002
+          - type: 'null'
+        count:
+          type: integer
+    DailyReportPage:
+      type: object
+      required:
+      - items
+      - page
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DailyReport'
+        page:
+          $ref: '#/components/schemas/PageMeta'
+    DailyReportReadyEvent:
+      type: object
+      description: Публикуется при закрытии дня. Задел для будущего notification-service (Telegram/e-mail владельцу).
+      required:
+      - eventId
+      - eventType
+      - schemaVersion
+      - occurredAt
+      - correlationId
+      - producer
+      - payload
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: Уникален для сообщения; потребители хранят обработанные eventId (дедупликация)
+        eventType:
+          type: string
+          enum:
+          - report.daily-ready
+        schemaVersion:
+          type: integer
+          example: 1
+        occurredAt:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+          format: uuid
+          description: Сквозной идентификатор саги = recordingId
+        producer:
+          type: string
+          example: recording-service
+        payload:
+          type: object
+          required:
+          - venueId
+          - date
+          properties:
+            venueId: *id002
+            date: *id001
+            totals:
+              type: object
+              additionalProperties:
+                type: integer

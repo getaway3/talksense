@@ -1,0 +1,802 @@
+# AsyncAPI — события TalkSense (ЛР3). Схемы совпадают с components/schemas в OpenAPI издателей.
+asyncapi: 3.0.0
+info:
+  title: TalkSense events
+  version: 1.0.0
+  description: 'Асинхронные взаимодействия сервисов TalkSense через RabbitMQ (topic exchange talksense.events). Каждый подписчик
+    имеет свою durable-очередь, очередь отложенных повторов и DLQ. Все сообщения в едином конверте: eventId, eventType, schemaVersion,
+    occurredAt, correlationId (= recordingId для саги обработки записи), producer, payload.'
+servers:
+  rabbitmq:
+    host: rabbitmq:5672
+    protocol: amqp
+    protocolVersion: 0.9.1
+    description: Брокер во внутренней сети
+channels:
+  recording_uploaded:
+    address: recording.uploaded
+    description: 'Аудиофрагмент сохранён в MinIO — можно распознавать. Издатель: recording-service. Подписчики: transcription-service.'
+    messages:
+      RecordingUploadedEvent:
+        $ref: '#/components/messages/RecordingUploadedEvent'
+    bindings:
+      amqp:
+        is: routingKey
+        exchange:
+          name: talksense.events
+          type: topic
+          durable: true
+          autoDelete: false
+          vhost: /
+  transcription_completed:
+    address: transcription.completed
+    description: 'Расшифровка готова. Издатель: transcription-service. Подписчики: analysis-service, recording-service.'
+    messages:
+      TranscriptionCompletedEvent:
+        $ref: '#/components/messages/TranscriptionCompletedEvent'
+    bindings:
+      amqp:
+        is: routingKey
+        exchange:
+          name: talksense.events
+          type: topic
+          durable: true
+          autoDelete: false
+          vhost: /
+  transcription_failed:
+    address: transcription.failed
+    description: 'Распознать не удалось после всех повторов. Издатель: transcription-service. Подписчики: recording-service.'
+    messages:
+      TranscriptionFailedEvent:
+        $ref: '#/components/messages/TranscriptionFailedEvent'
+    bindings:
+      amqp:
+        is: routingKey
+        exchange:
+          name: talksense.events
+          type: topic
+          durable: true
+          autoDelete: false
+          vhost: /
+  analysis_completed:
+    address: analysis.completed
+    description: 'Инциденты выделены. Издатель: analysis-service. Подписчики: report-service, recording-service.'
+    messages:
+      AnalysisCompletedEvent:
+        $ref: '#/components/messages/AnalysisCompletedEvent'
+    bindings:
+      amqp:
+        is: routingKey
+        exchange:
+          name: talksense.events
+          type: topic
+          durable: true
+          autoDelete: false
+          vhost: /
+  analysis_discarded:
+    address: analysis.discarded
+    description: 'В записи только личный разговор/шум — данные удаляются. Издатель: analysis-service. Подписчики: recording-service,
+      transcription-service.'
+    messages:
+      AnalysisDiscardedEvent:
+        $ref: '#/components/messages/AnalysisDiscardedEvent'
+    bindings:
+      amqp:
+        is: routingKey
+        exchange:
+          name: talksense.events
+          type: topic
+          durable: true
+          autoDelete: false
+          vhost: /
+  analysis_failed:
+    address: analysis.failed
+    description: 'GigaChat недоступен или вернул некорректный ответ. Издатель: analysis-service. Подписчики: recording-service.'
+    messages:
+      AnalysisFailedEvent:
+        $ref: '#/components/messages/AnalysisFailedEvent'
+    bindings:
+      amqp:
+        is: routingKey
+        exchange:
+          name: talksense.events
+          type: topic
+          durable: true
+          autoDelete: false
+          vhost: /
+  venue_deactivated:
+    address: venue.deactivated
+    description: 'Заведение отключено — отозвать его устройства. Издатель: venue-service. Подписчики: device-service.'
+    messages:
+      VenueDeactivatedEvent:
+        $ref: '#/components/messages/VenueDeactivatedEvent'
+    bindings:
+      amqp:
+        is: routingKey
+        exchange:
+          name: talksense.events
+          type: topic
+          durable: true
+          autoDelete: false
+          vhost: /
+  report_daily_ready:
+    address: report.daily-ready
+    description: 'Отчёт за день закрыт (задел под уведомления). Издатель: report-service. Подписчики: пока нет.'
+    messages:
+      DailyReportReadyEvent:
+        $ref: '#/components/messages/DailyReportReadyEvent'
+    bindings:
+      amqp:
+        is: routingKey
+        exchange:
+          name: talksense.events
+          type: topic
+          durable: true
+          autoDelete: false
+          vhost: /
+operations:
+  publish_recording_uploaded:
+    action: send
+    channel:
+      $ref: '#/channels/recording_uploaded'
+    summary: recording-service публикует recording.uploaded
+    messages:
+    - $ref: '#/channels/recording_uploaded/messages/RecordingUploadedEvent'
+  transcription_on_recording_uploaded:
+    action: receive
+    channel:
+      $ref: '#/channels/recording_uploaded'
+    summary: transcription-service обрабатывает recording.uploaded (очередь transcription-service.recording.uploaded, DLQ
+      transcription-service.recording.uploaded.dlq)
+    messages:
+    - $ref: '#/channels/recording_uploaded/messages/RecordingUploadedEvent'
+  publish_transcription_completed:
+    action: send
+    channel:
+      $ref: '#/channels/transcription_completed'
+    summary: transcription-service публикует transcription.completed
+    messages:
+    - $ref: '#/channels/transcription_completed/messages/TranscriptionCompletedEvent'
+  analysis_on_transcription_completed:
+    action: receive
+    channel:
+      $ref: '#/channels/transcription_completed'
+    summary: analysis-service обрабатывает transcription.completed (очередь analysis-service.transcription.completed, DLQ
+      analysis-service.transcription.completed.dlq)
+    messages:
+    - $ref: '#/channels/transcription_completed/messages/TranscriptionCompletedEvent'
+  recording_on_transcription_completed:
+    action: receive
+    channel:
+      $ref: '#/channels/transcription_completed'
+    summary: recording-service обрабатывает transcription.completed (очередь recording-service.transcription.completed, DLQ
+      recording-service.transcription.completed.dlq)
+    messages:
+    - $ref: '#/channels/transcription_completed/messages/TranscriptionCompletedEvent'
+  publish_transcription_failed:
+    action: send
+    channel:
+      $ref: '#/channels/transcription_failed'
+    summary: transcription-service публикует transcription.failed
+    messages:
+    - $ref: '#/channels/transcription_failed/messages/TranscriptionFailedEvent'
+  recording_on_transcription_failed:
+    action: receive
+    channel:
+      $ref: '#/channels/transcription_failed'
+    summary: recording-service обрабатывает transcription.failed (очередь recording-service.transcription.failed, DLQ recording-service.transcription.failed.dlq)
+    messages:
+    - $ref: '#/channels/transcription_failed/messages/TranscriptionFailedEvent'
+  publish_analysis_completed:
+    action: send
+    channel:
+      $ref: '#/channels/analysis_completed'
+    summary: analysis-service публикует analysis.completed
+    messages:
+    - $ref: '#/channels/analysis_completed/messages/AnalysisCompletedEvent'
+  report_on_analysis_completed:
+    action: receive
+    channel:
+      $ref: '#/channels/analysis_completed'
+    summary: report-service обрабатывает analysis.completed (очередь report-service.analysis.completed, DLQ report-service.analysis.completed.dlq)
+    messages:
+    - $ref: '#/channels/analysis_completed/messages/AnalysisCompletedEvent'
+  recording_on_analysis_completed:
+    action: receive
+    channel:
+      $ref: '#/channels/analysis_completed'
+    summary: recording-service обрабатывает analysis.completed (очередь recording-service.analysis.completed, DLQ recording-service.analysis.completed.dlq)
+    messages:
+    - $ref: '#/channels/analysis_completed/messages/AnalysisCompletedEvent'
+  publish_analysis_discarded:
+    action: send
+    channel:
+      $ref: '#/channels/analysis_discarded'
+    summary: analysis-service публикует analysis.discarded
+    messages:
+    - $ref: '#/channels/analysis_discarded/messages/AnalysisDiscardedEvent'
+  recording_on_analysis_discarded:
+    action: receive
+    channel:
+      $ref: '#/channels/analysis_discarded'
+    summary: recording-service обрабатывает analysis.discarded (очередь recording-service.analysis.discarded, DLQ recording-service.analysis.discarded.dlq)
+    messages:
+    - $ref: '#/channels/analysis_discarded/messages/AnalysisDiscardedEvent'
+  transcription_on_analysis_discarded:
+    action: receive
+    channel:
+      $ref: '#/channels/analysis_discarded'
+    summary: transcription-service обрабатывает analysis.discarded (очередь transcription-service.analysis.discarded, DLQ
+      transcription-service.analysis.discarded.dlq)
+    messages:
+    - $ref: '#/channels/analysis_discarded/messages/AnalysisDiscardedEvent'
+  publish_analysis_failed:
+    action: send
+    channel:
+      $ref: '#/channels/analysis_failed'
+    summary: analysis-service публикует analysis.failed
+    messages:
+    - $ref: '#/channels/analysis_failed/messages/AnalysisFailedEvent'
+  recording_on_analysis_failed:
+    action: receive
+    channel:
+      $ref: '#/channels/analysis_failed'
+    summary: recording-service обрабатывает analysis.failed (очередь recording-service.analysis.failed, DLQ recording-service.analysis.failed.dlq)
+    messages:
+    - $ref: '#/channels/analysis_failed/messages/AnalysisFailedEvent'
+  publish_venue_deactivated:
+    action: send
+    channel:
+      $ref: '#/channels/venue_deactivated'
+    summary: venue-service публикует venue.deactivated
+    messages:
+    - $ref: '#/channels/venue_deactivated/messages/VenueDeactivatedEvent'
+  device_on_venue_deactivated:
+    action: receive
+    channel:
+      $ref: '#/channels/venue_deactivated'
+    summary: device-service обрабатывает venue.deactivated (очередь device-service.venue.deactivated, DLQ device-service.venue.deactivated.dlq)
+    messages:
+    - $ref: '#/channels/venue_deactivated/messages/VenueDeactivatedEvent'
+  publish_report_daily_ready:
+    action: send
+    channel:
+      $ref: '#/channels/report_daily_ready'
+    summary: report-service публикует report.daily-ready
+    messages:
+    - $ref: '#/channels/report_daily_ready/messages/DailyReportReadyEvent'
+components:
+  messages:
+    RecordingUploadedEvent:
+      name: recording.uploaded
+      title: recording.uploaded
+      summary: Аудиофрагмент сохранён в MinIO — можно распознавать
+      contentType: application/json
+      correlationId:
+        location: $message.payload#/correlationId
+      payload:
+        $ref: '#/components/schemas/RecordingUploadedEvent'
+    TranscriptionCompletedEvent:
+      name: transcription.completed
+      title: transcription.completed
+      summary: Расшифровка готова
+      contentType: application/json
+      correlationId:
+        location: $message.payload#/correlationId
+      payload:
+        $ref: '#/components/schemas/TranscriptionCompletedEvent'
+    TranscriptionFailedEvent:
+      name: transcription.failed
+      title: transcription.failed
+      summary: Распознать не удалось после всех повторов
+      contentType: application/json
+      correlationId:
+        location: $message.payload#/correlationId
+      payload:
+        $ref: '#/components/schemas/TranscriptionFailedEvent'
+    AnalysisCompletedEvent:
+      name: analysis.completed
+      title: analysis.completed
+      summary: Инциденты выделены
+      contentType: application/json
+      correlationId:
+        location: $message.payload#/correlationId
+      payload:
+        $ref: '#/components/schemas/AnalysisCompletedEvent'
+    AnalysisDiscardedEvent:
+      name: analysis.discarded
+      title: analysis.discarded
+      summary: В записи только личный разговор/шум — данные удаляются
+      contentType: application/json
+      correlationId:
+        location: $message.payload#/correlationId
+      payload:
+        $ref: '#/components/schemas/AnalysisDiscardedEvent'
+    AnalysisFailedEvent:
+      name: analysis.failed
+      title: analysis.failed
+      summary: GigaChat недоступен или вернул некорректный ответ
+      contentType: application/json
+      correlationId:
+        location: $message.payload#/correlationId
+      payload:
+        $ref: '#/components/schemas/AnalysisFailedEvent'
+    VenueDeactivatedEvent:
+      name: venue.deactivated
+      title: venue.deactivated
+      summary: Заведение отключено — отозвать его устройства
+      contentType: application/json
+      correlationId:
+        location: $message.payload#/correlationId
+      payload:
+        $ref: '#/components/schemas/VenueDeactivatedEvent'
+    DailyReportReadyEvent:
+      name: report.daily-ready
+      title: report.daily-ready
+      summary: Отчёт за день закрыт (задел под уведомления)
+      contentType: application/json
+      correlationId:
+        location: $message.payload#/correlationId
+      payload:
+        $ref: '#/components/schemas/DailyReportReadyEvent'
+  schemas:
+    RecordingUploadedEvent:
+      type: object
+      description: 'Exchange talksense.events, routing key recording.uploaded. Подписчик: transcription-service.'
+      required:
+      - eventId
+      - eventType
+      - schemaVersion
+      - occurredAt
+      - correlationId
+      - producer
+      - payload
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: Уникален для сообщения; потребители хранят обработанные eventId (дедупликация)
+        eventType:
+          type: string
+          enum:
+          - recording.uploaded
+        schemaVersion:
+          type: integer
+          example: 1
+        occurredAt:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+          format: uuid
+          description: Сквозной идентификатор саги = recordingId
+        producer:
+          type: string
+          example: recording-service
+        payload:
+          type: object
+          required:
+          - recordingId
+          - venueId
+          - deviceId
+          - startedAt
+          properties:
+            recordingId:
+              type: string
+              format: uuid
+            venueId:
+              type: string
+              format: uuid
+            deviceId:
+              type: string
+              format: uuid
+            startedAt:
+              type: string
+              format: date-time
+            durationSec:
+              type: integer
+            format:
+              type: string
+            attempt:
+              type: integer
+              description: 1 — первая обработка, >1 — повторная (reprocess)
+    TranscriptionCompletedEvent:
+      type: object
+      description: 'Routing key transcription.completed. Подписчики: analysis-service, recording-service.'
+      required:
+      - eventId
+      - eventType
+      - schemaVersion
+      - occurredAt
+      - correlationId
+      - producer
+      - payload
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: Уникален для сообщения; потребители хранят обработанные eventId (дедупликация)
+        eventType:
+          type: string
+          enum:
+          - transcription.completed
+        schemaVersion:
+          type: integer
+          example: 1
+        occurredAt:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+          format: uuid
+          description: Сквозной идентификатор саги = recordingId
+        producer:
+          type: string
+          example: recording-service
+        payload:
+          type: object
+          required:
+          - recordingId
+          - transcriptId
+          - venueId
+          properties:
+            recordingId:
+              type: string
+              format: uuid
+            transcriptId:
+              type: string
+              format: uuid
+            venueId:
+              type: string
+              format: uuid
+            startedAt:
+              type: string
+              format: date-time
+            wordsCount:
+              type: integer
+            speakersCount:
+              type: integer
+    TranscriptionFailedEvent:
+      type: object
+      description: 'Публикуется после исчерпания повторов (3 попытки: 1, 5, 15 мин). Подписчик: recording-service.'
+      required:
+      - eventId
+      - eventType
+      - schemaVersion
+      - occurredAt
+      - correlationId
+      - producer
+      - payload
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: Уникален для сообщения; потребители хранят обработанные eventId (дедупликация)
+        eventType:
+          type: string
+          enum:
+          - transcription.failed
+        schemaVersion:
+          type: integer
+          example: 1
+        occurredAt:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+          format: uuid
+          description: Сквозной идентификатор саги = recordingId
+        producer:
+          type: string
+          example: recording-service
+        payload:
+          type: object
+          required:
+          - recordingId
+          - reason
+          properties:
+            recordingId:
+              type: string
+              format: uuid
+            reason:
+              type: string
+              enum:
+              - PROVIDER_UNAVAILABLE
+              - BAD_AUDIO
+              - AUDIO_GONE
+            attempts:
+              type: integer
+            detail:
+              type: string
+    IncidentShort:
+      type: object
+      required:
+      - incidentId
+      - type
+      - severity
+      properties:
+        incidentId:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum:
+          - CONFLICT
+          - OUT_OF_STOCK
+          - MENU_REQUEST
+          - COMPLAINT
+          - PRAISE
+          - SERVICE_ISSUE
+        severity:
+          type: string
+          enum:
+          - LOW
+          - MEDIUM
+          - HIGH
+        menuItemId:
+          oneOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+        requestedItem:
+          type: string
+        summary:
+          type: string
+    AnalysisCompletedEvent:
+      type: object
+      description: 'Routing key analysis.completed. Подписчики: report-service, recording-service.'
+      required:
+      - eventId
+      - eventType
+      - schemaVersion
+      - occurredAt
+      - correlationId
+      - producer
+      - payload
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: Уникален для сообщения; потребители хранят обработанные eventId (дедупликация)
+        eventType:
+          type: string
+          enum:
+          - analysis.completed
+        schemaVersion:
+          type: integer
+          example: 1
+        occurredAt:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+          format: uuid
+          description: Сквозной идентификатор саги = recordingId
+        producer:
+          type: string
+          example: recording-service
+        payload:
+          type: object
+          required:
+          - recordingId
+          - venueId
+          - date
+          - incidents
+          properties:
+            recordingId:
+              type: string
+              format: uuid
+            venueId:
+              type: string
+              format: uuid
+            date:
+              type: string
+              format: date
+            incidents:
+              type: array
+              items:
+                $ref: '#/components/schemas/IncidentShort'
+            relevantShare:
+              type: number
+              description: Доля полезного для бизнеса текста
+    AnalysisDiscardedEvent:
+      type: object
+      description: 'В записи нет полезного для бизнеса (личный разговор/шум). Подписчики: recording-service (удаляет аудио),
+        transcription-service (удаляет расшифровку).'
+      required:
+      - eventId
+      - eventType
+      - schemaVersion
+      - occurredAt
+      - correlationId
+      - producer
+      - payload
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: Уникален для сообщения; потребители хранят обработанные eventId (дедупликация)
+        eventType:
+          type: string
+          enum:
+          - analysis.discarded
+        schemaVersion:
+          type: integer
+          example: 1
+        occurredAt:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+          format: uuid
+          description: Сквозной идентификатор саги = recordingId
+        producer:
+          type: string
+          example: recording-service
+        payload:
+          type: object
+          required:
+          - recordingId
+          - reason
+          properties:
+            recordingId:
+              type: string
+              format: uuid
+            transcriptId:
+              type: string
+              format: uuid
+            reason:
+              type: string
+              enum:
+              - PERSONAL_ONLY
+              - NOISE
+              - VENUE_INACTIVE
+    AnalysisFailedEvent:
+      type: object
+      description: 'Подписчик: recording-service (статус FAILED_ANALYSIS, аудио не удаляется).'
+      required:
+      - eventId
+      - eventType
+      - schemaVersion
+      - occurredAt
+      - correlationId
+      - producer
+      - payload
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: Уникален для сообщения; потребители хранят обработанные eventId (дедупликация)
+        eventType:
+          type: string
+          enum:
+          - analysis.failed
+        schemaVersion:
+          type: integer
+          example: 1
+        occurredAt:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+          format: uuid
+          description: Сквозной идентификатор саги = recordingId
+        producer:
+          type: string
+          example: recording-service
+        payload:
+          type: object
+          required:
+          - recordingId
+          - reason
+          properties:
+            recordingId:
+              type: string
+              format: uuid
+            transcriptId:
+              type: string
+              format: uuid
+            reason:
+              type: string
+              enum:
+              - LLM_UNAVAILABLE
+              - LLM_BAD_RESPONSE
+              - DEPENDENCY_UNAVAILABLE
+            attempts:
+              type: integer
+    VenueDeactivatedEvent:
+      type: object
+      description: 'Публикуется в exchange talksense.events (routing key venue.deactivated). Подписчик: device-service.'
+      required:
+      - eventId
+      - eventType
+      - schemaVersion
+      - occurredAt
+      - correlationId
+      - producer
+      - payload
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: Уникален для сообщения; потребители хранят обработанные eventId (дедупликация)
+        eventType:
+          type: string
+          enum:
+          - venue.deactivated
+        schemaVersion:
+          type: integer
+          example: 1
+        occurredAt:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+          format: uuid
+          description: Сквозной идентификатор саги = recordingId
+        producer:
+          type: string
+          example: recording-service
+        payload:
+          type: object
+          required:
+          - venueId
+          properties:
+            venueId:
+              type: string
+              format: uuid
+            organizationId:
+              type: string
+              format: uuid
+            reason:
+              type: string
+              example: Точка закрыта
+    DailyReportReadyEvent:
+      type: object
+      description: Публикуется при закрытии дня. Задел для будущего notification-service (Telegram/e-mail владельцу).
+      required:
+      - eventId
+      - eventType
+      - schemaVersion
+      - occurredAt
+      - correlationId
+      - producer
+      - payload
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: Уникален для сообщения; потребители хранят обработанные eventId (дедупликация)
+        eventType:
+          type: string
+          enum:
+          - report.daily-ready
+        schemaVersion:
+          type: integer
+          example: 1
+        occurredAt:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+          format: uuid
+          description: Сквозной идентификатор саги = recordingId
+        producer:
+          type: string
+          example: recording-service
+        payload:
+          type: object
+          required:
+          - venueId
+          - date
+          properties:
+            venueId:
+              type: string
+              format: uuid
+            date:
+              type: string
+              format: date
+            totals:
+              type: object
+              additionalProperties:
+                type: integer

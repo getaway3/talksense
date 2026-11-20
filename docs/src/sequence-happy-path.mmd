@@ -1,0 +1,44 @@
+sequenceDiagram
+    autonumber
+    participant D as Устройство
+    participant GW as API Gateway
+    participant REC as recording-service
+    participant DEV as device-service
+    participant MQ as RabbitMQ
+    participant TR as transcription-service
+    participant YA as Yandex SpeechKit
+    participant AN as analysis-service
+    participant VEN as venue-service
+    participant GC as GigaChat
+    participant REP as report-service
+
+    Note over D: VAD выделил фрагмент разговора у кассы (ogg/opus)
+    D->>GW: POST /device/v1/recordings (X-Device-Token, Idempotency-Key = chunkId)
+    GW->>REC: проксирование
+    REC->>DEV: S2 POST /internal/v1/devices/verify
+    DEV-->>REC: 200 {deviceId, venueId, ACTIVE}
+    REC->>REC: файл → MinIO, запись в БД (status UPLOADED)
+    REC-->>D: 201 Recording
+    REC-)MQ: recording.uploaded (correlationId = recordingId)
+    MQ-)TR: recording.uploaded
+    TR->>REC: S3 GET /internal/v1/recordings/{id}/audio-url
+    REC-->>TR: 200 presigned URL (15 мин)
+    TR->>YA: распознавание + диаризация
+    YA-->>TR: сегменты текста по дикторам
+    TR->>TR: сохранить Transcript (MongoDB)
+    TR-)MQ: transcription.completed
+    MQ-)REC: transcription.completed → status TRANSCRIBED
+    MQ-)AN: transcription.completed
+    AN->>TR: S4 GET /internal/v1/transcripts/{id}
+    TR-->>AN: 200 Transcript
+    AN->>VEN: S5 GET /internal/v1/venues/{id}/menu
+    VEN-->>AN: 200 меню с наличием и синонимами
+    AN->>GC: промпт: отбросить личное и «воду», выделить инциденты
+    GC-->>AN: JSON: OUT_OF_STOCK «лавандовый раф»
+    AN->>AN: сохранить инциденты
+    AN-)MQ: analysis.completed
+    MQ-)REP: analysis.completed
+    REP->>VEN: S6 GET /internal/v1/venues/{id} (имя, часовой пояс, кэш)
+    VEN-->>REP: 200 Venue
+    REP->>REP: upsert DailyReport(venueId, date), +1 OUT_OF_STOCK
+    MQ-)REC: analysis.completed → status ANALYZED, удалить аудио из MinIO

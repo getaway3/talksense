@@ -1,0 +1,592 @@
+# analysis-service — ИИ-анализ расшифровок (GigaChat)
+# ЛР3, система TalkSense. Сгенерировано из единого описания.
+openapi: 3.1.0
+info:
+  title: analysis-service
+  version: 1.0.0
+  summary: ИИ-анализ расшифровок (GigaChat)
+  description: 'Подписан на transcription.completed. Получает расшифровку (transcription-service) и меню (venue-service),
+    отправляет в GigaChat промпт: отбросить личные разговоры и «воду», выделить инциденты, важные бизнесу. Хранит инциденты
+    и публикует analysis.completed / analysis.discarded / analysis.failed.'
+  contact:
+    name: Акобян Г.П., ВМО42
+  license:
+    name: MIT
+    identifier: MIT
+servers:
+- url: https://api.talksense.local
+  description: Через API Gateway (public)
+- url: http://analysis-service:8000
+  description: Внутренняя сеть (internal)
+security:
+- bearerAuth: []
+tags:
+- name: public
+  description: Внешние эндпоинты, доступны клиенту через API Gateway
+paths:
+  /api/v1/incidents:
+    get:
+      operationId: listIncidents
+      summary: Инциденты заведения за период с фильтрами
+      tags:
+      - public
+      parameters:
+      - in: query
+        name: venueId
+        required: true
+        schema: &id002
+          type: string
+          format: uuid
+      - in: query
+        name: from
+        required: true
+        schema: &id001
+          type: string
+          format: date
+      - in: query
+        name: to
+        required: true
+        schema: *id001
+      - in: query
+        name: type
+        schema:
+          type: array
+          items:
+            type: string
+            enum: &id004
+            - CONFLICT
+            - OUT_OF_STOCK
+            - MENU_REQUEST
+            - COMPLAINT
+            - PRAISE
+            - SERVICE_ISSUE
+        style: form
+        explode: false
+      - in: query
+        name: severity
+        schema:
+          type: string
+          enum:
+          - LOW
+          - MEDIUM
+          - HIGH
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Страница инцидентов
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IncidentPage'
+              example:
+                items:
+                - &id003
+                  id: f47ac10b-58cc-4372-a567-0e02b2c3d479
+                  recordingId: 9a4d1e2c-6b7f-4a08-b3c5-0e1f2d3c4b5a
+                  venueId: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                  type: OUT_OF_STOCK
+                  occurredAt: '2026-11-20T10:15:31Z'
+                  summary: Гость спросил лавандовый раф — сироп закончился
+                  menuItemId: 0d6e1f4a-2b6c-4f3e-9a51-6c0b7e1d2a33
+                  requestedItem: лавандовый раф
+                  quote: «А лавандовый раф есть?» — «Сироп закончился»
+                  severity: MEDIUM
+                  confidence: 0.88
+                  reviewStatus: NEW
+                page:
+                  page: 0
+                  size: 20
+                  totalElements: 1
+                  totalPages: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/incidents/{incidentId}:
+    get:
+      operationId: getIncident
+      summary: Инцидент
+      tags:
+      - public
+      parameters:
+      - in: path
+        name: incidentId
+        required: true
+        schema: *id002
+      responses:
+        '200':
+          description: Инцидент
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Incident'
+              example: *id003
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      operationId: reviewIncident
+      summary: Отметить инцидент как подтверждённый или ложный
+      tags:
+      - public
+      description: Разметка менеджера используется для оценки точности промпта GigaChat.
+      parameters:
+      - in: path
+        name: incidentId
+        required: true
+        schema: *id002
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewIncidentRequest'
+            example:
+              reviewStatus: CONFIRMED
+              comment: Сироп заказан
+      responses:
+        '200':
+          description: Инцидент обновлён
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Incident'
+              example:
+                id: f47ac10b-58cc-4372-a567-0e02b2c3d479
+                recordingId: 9a4d1e2c-6b7f-4a08-b3c5-0e1f2d3c4b5a
+                venueId: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                type: OUT_OF_STOCK
+                occurredAt: '2026-11-20T10:15:31Z'
+                summary: Гость спросил лавандовый раф — сироп закончился
+                menuItemId: 0d6e1f4a-2b6c-4f3e-9a51-6c0b7e1d2a33
+                requestedItem: лавандовый раф
+                quote: «А лавандовый раф есть?» — «Сироп закончился»
+                severity: MEDIUM
+                confidence: 0.88
+                reviewStatus: CONFIRMED
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access-токен Keycloak (OpenID Connect). Проверяется на API Gateway.
+    serviceAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Токен сервисной учётной записи Keycloak (client credentials) для internal-вызовов.
+    deviceAuth:
+      type: apiKey
+      in: header
+      name: X-Device-Token
+      description: Секрет устройства, выданный device-service при активации.
+  parameters:
+    Page:
+      in: query
+      name: page
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+      description: Номер страницы (с 0)
+    Size:
+      in: query
+      name: size
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+      description: Размер страницы
+  responses:
+    BadRequest:
+      description: Некорректный запрос
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://talksense.local/problems/validation-error
+            title: Validation error
+            status: 400
+            detail: Поле name обязательно
+            traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+    Unauthorized:
+      description: Нет или неверный токен
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://talksense.local/problems/unauthorized
+            title: Unauthorized
+            status: 401
+            detail: Bearer-токен отсутствует или истёк
+            traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+    NotFound:
+      description: Не найдено
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://talksense.local/problems/not-found
+            title: Not found
+            status: 404
+            detail: Объект не найден
+            traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+  schemas:
+    Problem:
+      type: object
+      description: Единая модель ошибки во всех сервисах (RFC 9457 / RFC 7807 Problem Details).
+      required:
+      - type
+      - title
+      - status
+      properties:
+        type:
+          type: string
+          format: uri
+          example: https://talksense.local/problems/not-found
+        title:
+          type: string
+          example: Ресурс не найден
+        status:
+          type: integer
+          example: 404
+        detail:
+          type: string
+          example: Заведение 7c9e... не найдено
+        instance:
+          type: string
+          example: /api/v1/venues/7c9e6679-7425-40de-944b-e07fc1f90ae7
+        traceId:
+          type: string
+          example: 4bf92f3577b34da6a3ce929d0e0e4736
+        errors:
+          type: array
+          description: Ошибки валидации по полям (для 400/422)
+          items:
+            type: object
+            required:
+            - field
+            - message
+            properties:
+              field:
+                type: string
+              message:
+                type: string
+    PageMeta:
+      type: object
+      required:
+      - page
+      - size
+      - totalElements
+      - totalPages
+      properties:
+        page:
+          type: integer
+          minimum: 0
+          example: 0
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+          example: 20
+        totalElements:
+          type: integer
+          example: 42
+        totalPages:
+          type: integer
+          example: 3
+    EventEnvelope:
+      type: object
+      description: Конверт всех асинхронных сообщений. Полезная нагрузка — в payload.
+      required:
+      - eventId
+      - eventType
+      - schemaVersion
+      - occurredAt
+      - correlationId
+      - producer
+      - payload
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: Уникален для сообщения; потребители хранят обработанные eventId (дедупликация)
+        eventType:
+          type: string
+          example: recording.uploaded
+        schemaVersion:
+          type: integer
+          example: 1
+        occurredAt: &id005
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+          format: uuid
+          description: Сквозной идентификатор саги = recordingId
+        producer:
+          type: string
+          example: recording-service
+        payload:
+          type: object
+    Incident:
+      type: object
+      required:
+      - id
+      - recordingId
+      - venueId
+      - type
+      - occurredAt
+      - summary
+      - severity
+      properties:
+        id: *id002
+        recordingId: *id002
+        venueId: *id002
+        type:
+          type: string
+          enum: *id004
+          description: CONFLICT — конфликт; OUT_OF_STOCK — спросили позицию из меню, её нет в наличии; MENU_REQUEST — просили
+            позицию, которой нет в меню; COMPLAINT — жалоба; PRAISE — благодарность; SERVICE_ISSUE — нарушение стандарта обслуживания
+        occurredAt: *id005
+        summary:
+          type: string
+          example: Гость спросил лавандовый раф — сироп закончился
+        menuItemId:
+          oneOf:
+          - *id002
+          - type: 'null'
+          description: Позиция меню, если сопоставлена
+        requestedItem:
+          type: string
+          example: раф с лавандой
+        quote:
+          type: string
+          description: Короткая обезличенная цитата (без имён и телефонов)
+        severity:
+          type: string
+          enum:
+          - LOW
+          - MEDIUM
+          - HIGH
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        reviewStatus:
+          type: string
+          enum:
+          - NEW
+          - CONFIRMED
+          - FALSE_POSITIVE
+    IncidentPage:
+      type: object
+      required:
+      - items
+      - page
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Incident'
+        page:
+          $ref: '#/components/schemas/PageMeta'
+    ReviewIncidentRequest:
+      type: object
+      required:
+      - reviewStatus
+      properties:
+        reviewStatus:
+          type: string
+          enum:
+          - CONFIRMED
+          - FALSE_POSITIVE
+        comment:
+          type: string
+          maxLength: 500
+    IncidentShort:
+      type: object
+      required:
+      - incidentId
+      - type
+      - severity
+      properties:
+        incidentId: *id002
+        type:
+          type: string
+          enum: *id004
+        severity:
+          type: string
+          enum:
+          - LOW
+          - MEDIUM
+          - HIGH
+        menuItemId:
+          oneOf:
+          - *id002
+          - type: 'null'
+        requestedItem:
+          type: string
+        summary:
+          type: string
+    AnalysisCompletedEvent:
+      type: object
+      description: 'Routing key analysis.completed. Подписчики: report-service, recording-service.'
+      required:
+      - eventId
+      - eventType
+      - schemaVersion
+      - occurredAt
+      - correlationId
+      - producer
+      - payload
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: Уникален для сообщения; потребители хранят обработанные eventId (дедупликация)
+        eventType:
+          type: string
+          enum:
+          - analysis.completed
+        schemaVersion:
+          type: integer
+          example: 1
+        occurredAt:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+          format: uuid
+          description: Сквозной идентификатор саги = recordingId
+        producer:
+          type: string
+          example: recording-service
+        payload:
+          type: object
+          required:
+          - recordingId
+          - venueId
+          - date
+          - incidents
+          properties:
+            recordingId: *id002
+            venueId: *id002
+            date: *id001
+            incidents:
+              type: array
+              items:
+                $ref: '#/components/schemas/IncidentShort'
+            relevantShare:
+              type: number
+              description: Доля полезного для бизнеса текста
+    AnalysisDiscardedEvent:
+      type: object
+      description: 'В записи нет полезного для бизнеса (личный разговор/шум). Подписчики: recording-service (удаляет аудио),
+        transcription-service (удаляет расшифровку).'
+      required:
+      - eventId
+      - eventType
+      - schemaVersion
+      - occurredAt
+      - correlationId
+      - producer
+      - payload
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: Уникален для сообщения; потребители хранят обработанные eventId (дедупликация)
+        eventType:
+          type: string
+          enum:
+          - analysis.discarded
+        schemaVersion:
+          type: integer
+          example: 1
+        occurredAt:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+          format: uuid
+          description: Сквозной идентификатор саги = recordingId
+        producer:
+          type: string
+          example: recording-service
+        payload:
+          type: object
+          required:
+          - recordingId
+          - reason
+          properties:
+            recordingId: *id002
+            transcriptId: *id002
+            reason:
+              type: string
+              enum:
+              - PERSONAL_ONLY
+              - NOISE
+              - VENUE_INACTIVE
+    AnalysisFailedEvent:
+      type: object
+      description: 'Подписчик: recording-service (статус FAILED_ANALYSIS, аудио не удаляется).'
+      required:
+      - eventId
+      - eventType
+      - schemaVersion
+      - occurredAt
+      - correlationId
+      - producer
+      - payload
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: Уникален для сообщения; потребители хранят обработанные eventId (дедупликация)
+        eventType:
+          type: string
+          enum:
+          - analysis.failed
+        schemaVersion:
+          type: integer
+          example: 1
+        occurredAt:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+          format: uuid
+          description: Сквозной идентификатор саги = recordingId
+        producer:
+          type: string
+          example: recording-service
+        payload:
+          type: object
+          required:
+          - recordingId
+          - reason
+          properties:
+            recordingId: *id002
+            transcriptId: *id002
+            reason:
+              type: string
+              enum:
+              - LLM_UNAVAILABLE
+              - LLM_BAD_RESPONSE
+              - DEPENDENCY_UNAVAILABLE
+            attempts:
+              type: integer

@@ -1,0 +1,6 @@
+extends:
+  - recommended
+rules:
+  no-unused-components: off      # схемы событий лежат в components/schemas и описаны в asyncapi.yaml
+  operation-4xx-response: error
+  security-defined: error

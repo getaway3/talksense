@@ -1,0 +1,39 @@
+sequenceDiagram
+    autonumber
+    participant M as Управляющий (сайт)
+    participant REC as recording-service
+    participant MQ as RabbitMQ
+    participant TR as transcription-service
+    participant YA as Yandex SpeechKit
+    participant AN as analysis-service
+    participant GC as GigaChat
+
+    Note over REC,TR: Шаги 1–9 как в успешном сценарии: запись в MinIO, status UPLOADED
+    MQ-)TR: recording.uploaded (attempt 1)
+    TR->>YA: распознавание
+    YA--xTR: 503 / таймаут
+    TR-)MQ: в очередь отложенных повторов (TTL 1 мин)
+    MQ-)TR: повтор 2 → снова 503 (TTL 5 мин)
+    MQ-)TR: повтор 3 → снова 503 (TTL 15 мин)
+    TR-)MQ: transcription.failed {reason: PROVIDER_UNAVAILABLE, attempts: 3}
+    MQ-)REC: transcription.failed
+    REC->>REC: status FAILED_TRANSCRIPTION
+    Note over M,REC: Компенсация: аудио НЕ удаляется,<br/>фрагмент хранится в MinIO до 7 дней для повтора
+    M->>REC: POST /api/v1/recordings/{id}/reprocess (Idempotency-Key)
+    REC->>REC: FAILED_* и аудио на месте → UPLOADED
+    REC-->>M: 202 Accepted
+    REC-)MQ: recording.uploaded (attempt 2)
+    MQ-)TR: recording.uploaded
+    TR->>YA: распознавание
+    YA-->>TR: OK
+    TR-)MQ: transcription.completed
+    MQ-)AN: transcription.completed
+    AN->>GC: анализ
+    GC-->>AN: только личный разговор, полезного нет
+    AN-)MQ: analysis.discarded {reason: PERSONAL_ONLY}
+    par компенсация приватности
+        MQ-)REC: analysis.discarded → status DISCARDED, удалить аудио
+    and
+        MQ-)TR: analysis.discarded → удалить расшифровку
+    end
+    Note over REC,TR: Повторная доставка события: потребитель видит eventId в processed_events и пропускает

@@ -1,0 +1,563 @@
+# device-service — Реестр устройств-регистраторов
+# ЛР3, система TalkSense. Сгенерировано из единого описания.
+openapi: 3.1.0
+info:
+  title: device-service
+  version: 1.0.0
+  summary: Реестр устройств-регистраторов
+  description: Регистрация и активация устройств в заведениях, выдача и проверка токенов устройств, приём heartbeat и статус
+    «в сети». Подписан на venue.deactivated — отзывает устройства закрытой точки.
+  contact:
+    name: Акобян Г.П., ВМО42
+  license:
+    name: MIT
+    identifier: MIT
+servers:
+- url: https://api.talksense.local
+  description: Через API Gateway (public)
+- url: http://device-service:8000
+  description: Внутренняя сеть (internal)
+security:
+- bearerAuth: []
+tags:
+- name: public
+  description: Внешние эндпоинты, доступны клиенту через API Gateway
+- name: internal
+  description: Внутренние эндпоинты для других сервисов, через Gateway не публикуются
+paths:
+  /api/v1/devices:
+    get:
+      operationId: listDevices
+      summary: Устройства заведения
+      tags:
+      - public
+      parameters:
+      - in: query
+        name: venueId
+        required: true
+        schema: &id002
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Страница устройств
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DevicePage'
+              example:
+                items:
+                - &id001
+                  id: 3b241101-e2bb-4255-8caf-4136c566a962
+                  serialNumber: TS-REC-000123
+                  venueId: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                  placement: Касса №1
+                  status: ACTIVE
+                  online: true
+                  firmwareVersion: 1.4.2
+                  lastSeenAt: '2026-11-20T10:15:30Z'
+                  createdAt: '2026-11-20T10:15:30Z'
+                page:
+                  page: 0
+                  size: 20
+                  totalElements: 1
+                  totalPages: 1
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      operationId: registerDevice
+      summary: Зарегистрировать и активировать устройство в заведении
+      tags:
+      - public
+      description: Синхронно вызывает venue-service (GET /internal/v1/venues/{id}), чтобы проверить, что заведение существует
+        и активно.
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterDeviceRequest'
+            example:
+              serialNumber: TS-REC-000123
+              venueId: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+              placement: Касса №1
+      responses:
+        '201':
+          description: Устройство активировано
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceActivation'
+              example:
+                device: *id001
+                deviceToken: dvt_5f8c1e0a9b7d4c2e8f6a3b1d0c9e7f5a
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Серийный номер уже привязан
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                type: https://talksense.local/problems/conflict
+                title: Conflict
+                status: 409
+                detail: Устройство TS-REC-000123 уже активно
+                traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+        '422':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /api/v1/devices/{deviceId}:
+    get:
+      operationId: getDevice
+      summary: Устройство и его состояние
+      tags:
+      - public
+      parameters:
+      - &id003
+        in: path
+        name: deviceId
+        required: true
+        schema: *id002
+      responses:
+        '200':
+          description: Устройство
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+              example: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/devices/{deviceId}/revoke:
+    post:
+      operationId: revokeDevice
+      summary: Отозвать устройство (кража, замена)
+      tags:
+      - public
+      parameters:
+      - *id003
+      responses:
+        '200':
+          description: Устройство отозвано
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+              example:
+                id: 3b241101-e2bb-4255-8caf-4136c566a962
+                serialNumber: TS-REC-000123
+                venueId: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                placement: Касса №1
+                status: REVOKED
+                online: false
+                firmwareVersion: 1.4.2
+                lastSeenAt: '2026-11-20T10:15:30Z'
+                createdAt: '2026-11-20T10:15:30Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /device/v1/heartbeat:
+    post:
+      operationId: heartbeat
+      summary: Heartbeat от устройства (раз в 60 с)
+      tags:
+      - public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Heartbeat'
+            example:
+              firmwareVersion: 1.4.2
+              freeStorageMb: 3120
+              bufferedChunks: 0
+              micLevelDb: -38.5
+      security:
+      - deviceAuth: []
+      responses:
+        '204':
+          description: Принято
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /internal/v1/devices/verify:
+    post:
+      operationId: verifyDevice
+      summary: Проверить токен устройства (для recording-service)
+      tags:
+      - internal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyDeviceRequest'
+            example:
+              deviceToken: dvt_5f8c1e0a9b7d4c2e8f6a3b1d0c9e7f5a
+      security:
+      - serviceAuth: []
+      responses:
+        '200':
+          description: Устройство найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceIdentity'
+              example:
+                deviceId: 3b241101-e2bb-4255-8caf-4136c566a962
+                venueId: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                status: ACTIVE
+        '401':
+          description: Токен неизвестен
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                type: https://talksense.local/problems/unauthorized
+                title: Unauthorized
+                status: 401
+                detail: Неизвестный токен устройства
+                traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+        '403':
+          description: Устройство отозвано
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                type: https://talksense.local/problems/forbidden
+                title: Forbidden
+                status: 403
+                detail: Устройство отозвано
+                traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access-токен Keycloak (OpenID Connect). Проверяется на API Gateway.
+    serviceAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Токен сервисной учётной записи Keycloak (client credentials) для internal-вызовов.
+    deviceAuth:
+      type: apiKey
+      in: header
+      name: X-Device-Token
+      description: Секрет устройства, выданный device-service при активации.
+  parameters:
+    Page:
+      in: query
+      name: page
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+      description: Номер страницы (с 0)
+    Size:
+      in: query
+      name: size
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+      description: Размер страницы
+    IdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      required: true
+      schema: *id002
+      description: 'Ключ идемпотентности: повтор с тем же ключом вернёт исходный результат, не создавая дубль'
+  responses:
+    BadRequest:
+      description: Некорректный запрос
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://talksense.local/problems/validation-error
+            title: Validation error
+            status: 400
+            detail: Поле name обязательно
+            traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+    Unauthorized:
+      description: Нет или неверный токен
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://talksense.local/problems/unauthorized
+            title: Unauthorized
+            status: 401
+            detail: Bearer-токен отсутствует или истёк
+            traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+    Forbidden:
+      description: Недостаточно прав
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://talksense.local/problems/forbidden
+            title: Forbidden
+            status: 403
+            detail: Нет доступа к заведению
+            traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+    NotFound:
+      description: Не найдено
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://talksense.local/problems/not-found
+            title: Not found
+            status: 404
+            detail: Объект не найден
+            traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+    IdempotencyConflict:
+      description: Idempotency-Key уже использован с другим телом запроса
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://talksense.local/problems/idempotency-key-reuse
+            title: Idempotency key reuse
+            status: 422
+            detail: Ключ использован ранее с другим содержимым запроса
+            traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+    ServiceUnavailable:
+      description: Зависимость недоступна
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://talksense.local/problems/service-unavailable
+            title: Service unavailable
+            status: 503
+            detail: Хранилище временно недоступно, повторите запрос
+            traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+  schemas:
+    Problem:
+      type: object
+      description: Единая модель ошибки во всех сервисах (RFC 9457 / RFC 7807 Problem Details).
+      required:
+      - type
+      - title
+      - status
+      properties:
+        type:
+          type: string
+          format: uri
+          example: https://talksense.local/problems/not-found
+        title:
+          type: string
+          example: Ресурс не найден
+        status:
+          type: integer
+          example: 404
+        detail:
+          type: string
+          example: Заведение 7c9e... не найдено
+        instance:
+          type: string
+          example: /api/v1/venues/7c9e6679-7425-40de-944b-e07fc1f90ae7
+        traceId:
+          type: string
+          example: 4bf92f3577b34da6a3ce929d0e0e4736
+        errors:
+          type: array
+          description: Ошибки валидации по полям (для 400/422)
+          items:
+            type: object
+            required:
+            - field
+            - message
+            properties:
+              field:
+                type: string
+              message:
+                type: string
+    PageMeta:
+      type: object
+      required:
+      - page
+      - size
+      - totalElements
+      - totalPages
+      properties:
+        page:
+          type: integer
+          minimum: 0
+          example: 0
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+          example: 20
+        totalElements:
+          type: integer
+          example: 42
+        totalPages:
+          type: integer
+          example: 3
+    EventEnvelope:
+      type: object
+      description: Конверт всех асинхронных сообщений. Полезная нагрузка — в payload.
+      required:
+      - eventId
+      - eventType
+      - schemaVersion
+      - occurredAt
+      - correlationId
+      - producer
+      - payload
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: Уникален для сообщения; потребители хранят обработанные eventId (дедупликация)
+        eventType:
+          type: string
+          example: recording.uploaded
+        schemaVersion:
+          type: integer
+          example: 1
+        occurredAt: &id004
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+          format: uuid
+          description: Сквозной идентификатор саги = recordingId
+        producer:
+          type: string
+          example: recording-service
+        payload:
+          type: object
+    Device:
+      type: object
+      required:
+      - id
+      - serialNumber
+      - venueId
+      - status
+      properties:
+        id: *id002
+        serialNumber:
+          type: string
+          example: TS-REC-000123
+        venueId: *id002
+        placement:
+          type: string
+          example: Касса №1
+        status:
+          type: string
+          enum:
+          - PENDING_ACTIVATION
+          - ACTIVE
+          - REVOKED
+        online:
+          type: boolean
+          description: Был heartbeat за последние 2 минуты (ключ в Redis с TTL)
+        firmwareVersion:
+          type: string
+          example: 1.4.2
+        lastSeenAt: *id004
+        createdAt: *id004
+    RegisterDeviceRequest:
+      type: object
+      required:
+      - serialNumber
+      - venueId
+      properties:
+        serialNumber:
+          type: string
+          pattern: ^TS-REC-[0-9]{6}$
+        venueId: *id002
+        placement:
+          type: string
+          maxLength: 100
+    DeviceActivation:
+      type: object
+      required:
+      - device
+      - deviceToken
+      properties:
+        device:
+          $ref: '#/components/schemas/Device'
+        deviceToken:
+          type: string
+          description: Показывается один раз; прошивается в устройство
+    Heartbeat:
+      type: object
+      required:
+      - firmwareVersion
+      properties:
+        firmwareVersion:
+          type: string
+        freeStorageMb:
+          type: integer
+        bufferedChunks:
+          type: integer
+          description: Сколько фрагментов ждут отправки
+        micLevelDb:
+          type: number
+    VerifyDeviceRequest:
+      type: object
+      required:
+      - deviceToken
+      properties:
+        deviceToken:
+          type: string
+    DeviceIdentity:
+      type: object
+      required:
+      - deviceId
+      - venueId
+      - status
+      properties:
+        deviceId: *id002
+        venueId: *id002
+        status:
+          type: string
+          enum:
+          - ACTIVE
+          - REVOKED
+          - PENDING_ACTIVATION
+    DevicePage:
+      type: object
+      required:
+      - items
+      - page
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Device'
+        page:
+          $ref: '#/components/schemas/PageMeta'

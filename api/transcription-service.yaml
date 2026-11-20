@@ -1,0 +1,370 @@
+# transcription-service — Распознавание речи (Yandex SpeechKit)
+# ЛР3, система TalkSense. Сгенерировано из единого описания.
+openapi: 3.1.0
+info:
+  title: transcription-service
+  version: 1.0.0
+  summary: Распознавание речи (Yandex SpeechKit)
+  description: Подписан на recording.uploaded. Получает ссылку на аудио у recording-service, отправляет его в Yandex SpeechKit
+    (асинхронное распознавание, диаризация), сохраняет расшифровку в MongoDB и публикует transcription.completed или transcription.failed.
+    Повторы при недоступности провайдера — через отложенные очереди RabbitMQ.
+  contact:
+    name: Акобян Г.П., ВМО42
+  license:
+    name: MIT
+    identifier: MIT
+servers:
+- url: https://api.talksense.local
+  description: Через API Gateway (public)
+- url: http://transcription-service:8000
+  description: Внутренняя сеть (internal)
+security:
+- bearerAuth: []
+tags:
+- name: public
+  description: Внешние эндпоинты, доступны клиенту через API Gateway
+- name: internal
+  description: Внутренние эндпоинты для других сервисов, через Gateway не публикуются
+paths:
+  /api/v1/transcripts/by-recording/{recordingId}:
+    get:
+      operationId: getTranscriptByRecording
+      summary: Расшифровка записи (только роль ADMIN, для разбора спорных случаев)
+      tags:
+      - public
+      parameters:
+      - in: path
+        name: recordingId
+        required: true
+        schema: &id001
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Расшифровка
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transcript'
+              example: &id002
+                id: c56a4180-65aa-42ec-a945-5fd21dec0538
+                recordingId: 9a4d1e2c-6b7f-4a08-b3c5-0e1f2d3c4b5a
+                venueId: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                language: ru-RU
+                provider: yandex-speechkit
+                createdAt: '2026-11-20T10:15:30Z'
+                segments:
+                - startMs: 0
+                  endMs: 2400
+                  speaker: S1
+                  text: Здравствуйте, а лавандовый раф есть?
+                  confidence: 0.94
+                - startMs: 2500
+                  endMs: 4800
+                  speaker: S2
+                  text: К сожалению, лавандовый сироп закончился.
+                  confidence: 0.91
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /internal/v1/transcripts/{transcriptId}:
+    get:
+      operationId: internalGetTranscript
+      summary: Расшифровка для analysis-service
+      tags:
+      - internal
+      parameters:
+      - in: path
+        name: transcriptId
+        required: true
+        schema: *id001
+      security:
+      - serviceAuth: []
+      responses:
+        '200':
+          description: Расшифровка
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transcript'
+              example: *id002
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access-токен Keycloak (OpenID Connect). Проверяется на API Gateway.
+    serviceAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Токен сервисной учётной записи Keycloak (client credentials) для internal-вызовов.
+    deviceAuth:
+      type: apiKey
+      in: header
+      name: X-Device-Token
+      description: Секрет устройства, выданный device-service при активации.
+  parameters: {}
+  responses:
+    Unauthorized:
+      description: Нет или неверный токен
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://talksense.local/problems/unauthorized
+            title: Unauthorized
+            status: 401
+            detail: Bearer-токен отсутствует или истёк
+            traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+    Forbidden:
+      description: Недостаточно прав
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://talksense.local/problems/forbidden
+            title: Forbidden
+            status: 403
+            detail: Нет доступа к заведению
+            traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+    NotFound:
+      description: Не найдено
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://talksense.local/problems/not-found
+            title: Not found
+            status: 404
+            detail: Объект не найден
+            traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+  schemas:
+    Problem:
+      type: object
+      description: Единая модель ошибки во всех сервисах (RFC 9457 / RFC 7807 Problem Details).
+      required:
+      - type
+      - title
+      - status
+      properties:
+        type:
+          type: string
+          format: uri
+          example: https://talksense.local/problems/not-found
+        title:
+          type: string
+          example: Ресурс не найден
+        status:
+          type: integer
+          example: 404
+        detail:
+          type: string
+          example: Заведение 7c9e... не найдено
+        instance:
+          type: string
+          example: /api/v1/venues/7c9e6679-7425-40de-944b-e07fc1f90ae7
+        traceId:
+          type: string
+          example: 4bf92f3577b34da6a3ce929d0e0e4736
+        errors:
+          type: array
+          description: Ошибки валидации по полям (для 400/422)
+          items:
+            type: object
+            required:
+            - field
+            - message
+            properties:
+              field:
+                type: string
+              message:
+                type: string
+    EventEnvelope:
+      type: object
+      description: Конверт всех асинхронных сообщений. Полезная нагрузка — в payload.
+      required:
+      - eventId
+      - eventType
+      - schemaVersion
+      - occurredAt
+      - correlationId
+      - producer
+      - payload
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: Уникален для сообщения; потребители хранят обработанные eventId (дедупликация)
+        eventType:
+          type: string
+          example: recording.uploaded
+        schemaVersion:
+          type: integer
+          example: 1
+        occurredAt: &id003
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+          format: uuid
+          description: Сквозной идентификатор саги = recordingId
+        producer:
+          type: string
+          example: recording-service
+        payload:
+          type: object
+    Segment:
+      type: object
+      required:
+      - startMs
+      - endMs
+      - speaker
+      - text
+      properties:
+        startMs:
+          type: integer
+        endMs:
+          type: integer
+        speaker:
+          type: string
+          description: Метка диктора после диаризации
+          example: S1
+        text:
+          type: string
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+    Transcript:
+      type: object
+      required:
+      - id
+      - recordingId
+      - venueId
+      - language
+      - segments
+      properties:
+        id: *id001
+        recordingId: *id001
+        venueId: *id001
+        language:
+          type: string
+          example: ru-RU
+        provider:
+          type: string
+          example: yandex-speechkit
+        segments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Segment'
+        createdAt: *id003
+    TranscriptionCompletedEvent:
+      type: object
+      description: 'Routing key transcription.completed. Подписчики: analysis-service, recording-service.'
+      required:
+      - eventId
+      - eventType
+      - schemaVersion
+      - occurredAt
+      - correlationId
+      - producer
+      - payload
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: Уникален для сообщения; потребители хранят обработанные eventId (дедупликация)
+        eventType:
+          type: string
+          enum:
+          - transcription.completed
+        schemaVersion:
+          type: integer
+          example: 1
+        occurredAt:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+          format: uuid
+          description: Сквозной идентификатор саги = recordingId
+        producer:
+          type: string
+          example: recording-service
+        payload:
+          type: object
+          required:
+          - recordingId
+          - transcriptId
+          - venueId
+          properties:
+            recordingId: *id001
+            transcriptId: *id001
+            venueId: *id001
+            startedAt: *id003
+            wordsCount:
+              type: integer
+            speakersCount:
+              type: integer
+    TranscriptionFailedEvent:
+      type: object
+      description: 'Публикуется после исчерпания повторов (3 попытки: 1, 5, 15 мин). Подписчик: recording-service.'
+      required:
+      - eventId
+      - eventType
+      - schemaVersion
+      - occurredAt
+      - correlationId
+      - producer
+      - payload
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: Уникален для сообщения; потребители хранят обработанные eventId (дедупликация)
+        eventType:
+          type: string
+          enum:
+          - transcription.failed
+        schemaVersion:
+          type: integer
+          example: 1
+        occurredAt:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+          format: uuid
+          description: Сквозной идентификатор саги = recordingId
+        producer:
+          type: string
+          example: recording-service
+        payload:
+          type: object
+          required:
+          - recordingId
+          - reason
+          properties:
+            recordingId: *id001
+            reason:
+              type: string
+              enum:
+              - PROVIDER_UNAVAILABLE
+              - BAD_AUDIO
+              - AUDIO_GONE
+            attempts:
+              type: integer
+            detail:
+              type: string

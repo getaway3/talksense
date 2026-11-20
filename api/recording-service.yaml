@@ -1,0 +1,583 @@
+# recording-service — Приём аудио и состояние саги обработки
+# ЛР3, система TalkSense. Сгенерировано из единого описания.
+openapi: 3.1.0
+info:
+  title: recording-service
+  version: 1.0.0
+  summary: Приём аудио и состояние саги обработки
+  description: Принимает аудиофрагменты от устройств, хранит их в объектном хранилище и ведёт статус обработки каждой записи
+    (владелец состояния саги). Подписан на transcription.completed/failed и analysis.completed/discarded/failed; после анализа
+    удаляет исходное аудио (минимизация персональных данных).
+  contact:
+    name: Акобян Г.П., ВМО42
+  license:
+    name: MIT
+    identifier: MIT
+servers:
+- url: https://api.talksense.local
+  description: Через API Gateway (public)
+- url: http://recording-service:8000
+  description: Внутренняя сеть (internal)
+security:
+- bearerAuth: []
+tags:
+- name: public
+  description: Внешние эндпоинты, доступны клиенту через API Gateway
+- name: internal
+  description: Внутренние эндпоинты для других сервисов, через Gateway не публикуются
+paths:
+  /device/v1/recordings:
+    post:
+      operationId: uploadRecording
+      summary: Загрузить аудиофрагмент с устройства
+      tags:
+      - public
+      description: Устройство режет звук на фрагменты по паузам (VAD) и отправляет их. Сервис проверяет токен через device-service
+        (POST /internal/v1/devices/verify), кладёт файл в MinIO и публикует recording.uploaded. При 503 устройство держит
+        фрагмент в локальном буфере и повторяет отправку с тем же Idempotency-Key.
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+              - audio
+              - startedAt
+              - durationSec
+              properties:
+                audio:
+                  type: string
+                  contentMediaType: audio/ogg
+                startedAt: &id004
+                  type: string
+                  format: date-time
+                durationSec:
+                  type: integer
+                  minimum: 1
+                  maximum: 600
+      security:
+      - deviceAuth: []
+      responses:
+        '201':
+          description: Фрагмент принят, опубликовано recording.uploaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Recording'
+              example: &id001
+                id: 9a4d1e2c-6b7f-4a08-b3c5-0e1f2d3c4b5a
+                deviceId: 3b241101-e2bb-4255-8caf-4136c566a962
+                venueId: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                chunkId: TS-REC-000123-20261120-101530
+                startedAt: '2026-11-20T10:15:30Z'
+                durationSec: 94
+                format: OGG_OPUS
+                sizeBytes: 412334
+                status: UPLOADED
+                audioPurged: false
+                incidentsCount: 0
+                updatedAt: '2026-11-20T10:15:30Z'
+        '200':
+          description: Повтор с тем же Idempotency-Key — возвращена ранее созданная запись
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Recording'
+              example: *id001
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '413':
+          description: Файл больше 20 МБ
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                type: https://talksense.local/problems/payload-too-large
+                title: Payload too large
+                status: 413
+                detail: Максимальный размер фрагмента — 20 МБ
+                traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /api/v1/recordings:
+    get:
+      operationId: listRecordings
+      summary: Записи заведения за день (мониторинг обработки)
+      tags:
+      - public
+      parameters:
+      - in: query
+        name: venueId
+        required: true
+        schema: &id002
+          type: string
+          format: uuid
+      - in: query
+        name: date
+        required: true
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum: &id005
+          - UPLOADED
+          - TRANSCRIBED
+          - ANALYZED
+          - DISCARDED
+          - FAILED_TRANSCRIPTION
+          - FAILED_ANALYSIS
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Страница записей
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingPage'
+              example:
+                items:
+                - *id001
+                page:
+                  page: 0
+                  size: 20
+                  totalElements: 1
+                  totalPages: 1
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/recordings/{recordingId}:
+    get:
+      operationId: getRecording
+      summary: Запись и статус её обработки
+      tags:
+      - public
+      parameters:
+      - &id003
+        in: path
+        name: recordingId
+        required: true
+        schema: *id002
+      responses:
+        '200':
+          description: Запись
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Recording'
+              example: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/recordings/{recordingId}/reprocess:
+    post:
+      operationId: reprocessRecording
+      summary: Перезапустить обработку упавшей записи
+      tags:
+      - public
+      description: 'Повторно публикует recording.uploaded (attempt+1). transcription-service идемпотентен: если расшифровка
+        уже есть, SpeechKit повторно не вызывается.'
+      parameters:
+      - *id003
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          description: Обработка перезапущена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Recording'
+              example:
+                id: 9a4d1e2c-6b7f-4a08-b3c5-0e1f2d3c4b5a
+                deviceId: 3b241101-e2bb-4255-8caf-4136c566a962
+                venueId: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                chunkId: TS-REC-000123-20261120-101530
+                startedAt: '2026-11-20T10:15:30Z'
+                durationSec: 94
+                format: OGG_OPUS
+                sizeBytes: 412334
+                status: UPLOADED
+                audioPurged: false
+                incidentsCount: 0
+                updatedAt: '2026-11-20T10:15:30Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Нельзя перезапустить
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                type: https://talksense.local/problems/conflict
+                title: Conflict
+                status: 409
+                detail: Перезапуск возможен только из FAILED_*, и пока аудио не удалено
+                traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+  /internal/v1/recordings/{recordingId}/audio-url:
+    get:
+      operationId: getAudioUrl
+      summary: Временная ссылка на аудио в MinIO (для transcription-service)
+      tags:
+      - internal
+      parameters:
+      - *id003
+      security:
+      - serviceAuth: []
+      responses:
+        '200':
+          description: Presigned URL на 15 минут
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AudioUrl'
+              example:
+                url: https://minio.talksense.local/audio/9a4d1e2c.ogg?X-Amz-Signature=...
+                expiresAt: '2026-11-20T10:31:00Z'
+                format: OGG_OPUS
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          description: Аудио уже удалено
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                type: https://talksense.local/problems/gone
+                title: Gone
+                status: 410
+                detail: Аудио удалено по политике хранения
+                traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access-токен Keycloak (OpenID Connect). Проверяется на API Gateway.
+    serviceAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Токен сервисной учётной записи Keycloak (client credentials) для internal-вызовов.
+    deviceAuth:
+      type: apiKey
+      in: header
+      name: X-Device-Token
+      description: Секрет устройства, выданный device-service при активации.
+  parameters:
+    Page:
+      in: query
+      name: page
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+      description: Номер страницы (с 0)
+    Size:
+      in: query
+      name: size
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+      description: Размер страницы
+    IdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      required: true
+      schema: *id002
+      description: 'Ключ идемпотентности: повтор с тем же ключом вернёт исходный результат, не создавая дубль'
+  responses:
+    BadRequest:
+      description: Некорректный запрос
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://talksense.local/problems/validation-error
+            title: Validation error
+            status: 400
+            detail: Поле name обязательно
+            traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+    Unauthorized:
+      description: Нет или неверный токен
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://talksense.local/problems/unauthorized
+            title: Unauthorized
+            status: 401
+            detail: Bearer-токен отсутствует или истёк
+            traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+    Forbidden:
+      description: Недостаточно прав
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://talksense.local/problems/forbidden
+            title: Forbidden
+            status: 403
+            detail: Нет доступа к заведению
+            traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+    NotFound:
+      description: Не найдено
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://talksense.local/problems/not-found
+            title: Not found
+            status: 404
+            detail: Объект не найден
+            traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+    ServiceUnavailable:
+      description: Зависимость недоступна
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://talksense.local/problems/service-unavailable
+            title: Service unavailable
+            status: 503
+            detail: Хранилище временно недоступно, повторите запрос
+            traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+  schemas:
+    Problem:
+      type: object
+      description: Единая модель ошибки во всех сервисах (RFC 9457 / RFC 7807 Problem Details).
+      required:
+      - type
+      - title
+      - status
+      properties:
+        type:
+          type: string
+          format: uri
+          example: https://talksense.local/problems/not-found
+        title:
+          type: string
+          example: Ресурс не найден
+        status:
+          type: integer
+          example: 404
+        detail:
+          type: string
+          example: Заведение 7c9e... не найдено
+        instance:
+          type: string
+          example: /api/v1/venues/7c9e6679-7425-40de-944b-e07fc1f90ae7
+        traceId:
+          type: string
+          example: 4bf92f3577b34da6a3ce929d0e0e4736
+        errors:
+          type: array
+          description: Ошибки валидации по полям (для 400/422)
+          items:
+            type: object
+            required:
+            - field
+            - message
+            properties:
+              field:
+                type: string
+              message:
+                type: string
+    PageMeta:
+      type: object
+      required:
+      - page
+      - size
+      - totalElements
+      - totalPages
+      properties:
+        page:
+          type: integer
+          minimum: 0
+          example: 0
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+          example: 20
+        totalElements:
+          type: integer
+          example: 42
+        totalPages:
+          type: integer
+          example: 3
+    EventEnvelope:
+      type: object
+      description: Конверт всех асинхронных сообщений. Полезная нагрузка — в payload.
+      required:
+      - eventId
+      - eventType
+      - schemaVersion
+      - occurredAt
+      - correlationId
+      - producer
+      - payload
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: Уникален для сообщения; потребители хранят обработанные eventId (дедупликация)
+        eventType:
+          type: string
+          example: recording.uploaded
+        schemaVersion:
+          type: integer
+          example: 1
+        occurredAt: *id004
+        correlationId:
+          type: string
+          format: uuid
+          description: Сквозной идентификатор саги = recordingId
+        producer:
+          type: string
+          example: recording-service
+        payload:
+          type: object
+    Recording:
+      type: object
+      required:
+      - id
+      - deviceId
+      - venueId
+      - startedAt
+      - durationSec
+      - status
+      properties:
+        id: *id002
+        deviceId: *id002
+        venueId: *id002
+        chunkId:
+          type: string
+          description: Идентификатор фрагмента на устройстве (= Idempotency-Key)
+        startedAt: *id004
+        durationSec:
+          type: integer
+          example: 94
+        format:
+          type: string
+          enum:
+          - OGG_OPUS
+          - WAV
+        sizeBytes:
+          type: integer
+        status:
+          type: string
+          enum: *id005
+          description: Состояние саги обработки записи
+        statusReason:
+          type: string
+          example: 'SpeechKit: превышено число попыток'
+        audioPurged:
+          type: boolean
+          description: Исходное аудио удалено (политика хранения / приватность)
+        incidentsCount:
+          type: integer
+        updatedAt: *id004
+    RecordingPage:
+      type: object
+      required:
+      - items
+      - page
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Recording'
+        page:
+          $ref: '#/components/schemas/PageMeta'
+    AudioUrl:
+      type: object
+      required:
+      - url
+      - expiresAt
+      properties:
+        url:
+          type: string
+          format: uri
+        expiresAt: *id004
+        format:
+          type: string
+          enum:
+          - OGG_OPUS
+          - WAV
+    RecordingUploadedEvent:
+      type: object
+      description: 'Exchange talksense.events, routing key recording.uploaded. Подписчик: transcription-service.'
+      required:
+      - eventId
+      - eventType
+      - schemaVersion
+      - occurredAt
+      - correlationId
+      - producer
+      - payload
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: Уникален для сообщения; потребители хранят обработанные eventId (дедупликация)
+        eventType:
+          type: string
+          enum:
+          - recording.uploaded
+        schemaVersion:
+          type: integer
+          example: 1
+        occurredAt:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+          format: uuid
+          description: Сквозной идентификатор саги = recordingId
+        producer:
+          type: string
+          example: recording-service
+        payload:
+          type: object
+          required:
+          - recordingId
+          - venueId
+          - deviceId
+          - startedAt
+          properties:
+            recordingId: *id002
+            venueId: *id002
+            deviceId: *id002
+            startedAt: *id004
+            durationSec:
+              type: integer
+            format:
+              type: string
+            attempt:
+              type: integer
+              description: 1 — первая обработка, >1 — повторная (reprocess)

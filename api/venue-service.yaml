@@ -1,0 +1,699 @@
+# venue-service — Заведения и меню
+# ЛР3, система TalkSense. Сгенерировано из единого описания.
+openapi: 3.1.0
+info:
+  title: venue-service
+  version: 1.0.0
+  summary: Заведения и меню
+  description: Владеет данными об организациях, заведениях (точках продаж) и их меню. Меню нужно ИИ, чтобы отличать «нет в
+    наличии» (позиция есть в меню) от «просьбы добавить в меню» (позиции нет).
+  contact:
+    name: Акобян Г.П., ВМО42
+  license:
+    name: MIT
+    identifier: MIT
+servers:
+- url: https://api.talksense.local
+  description: Через API Gateway (public)
+- url: http://venue-service:8000
+  description: Внутренняя сеть (internal)
+security:
+- bearerAuth: []
+tags:
+- name: public
+  description: Внешние эндпоинты, доступны клиенту через API Gateway
+- name: internal
+  description: Внутренние эндпоинты для других сервисов, через Gateway не публикуются
+paths:
+  /api/v1/venues:
+    get:
+      operationId: listVenues
+      summary: Список заведений организации
+      tags:
+      - public
+      parameters:
+      - in: query
+        name: organizationId
+        required: true
+        schema: &id002
+          type: string
+          format: uuid
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum:
+          - ACTIVE
+          - DEACTIVATED
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Страница заведений
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VenuePage'
+              example:
+                items:
+                - &id001
+                  id: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                  organizationId: 1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed
+                  name: Кофейня «Зерно» на Садовой
+                  address: Ростов-на-Дону, ул. Большая Садовая, 10
+                  type: COFFEE_SHOP
+                  timezone: Europe/Moscow
+                  workingHours: 08:00-22:00
+                  status: ACTIVE
+                  createdAt: '2026-11-20T10:15:30Z'
+                page:
+                  page: 0
+                  size: 20
+                  totalElements: 1
+                  totalPages: 1
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      operationId: createVenue
+      summary: Добавить заведение
+      tags:
+      - public
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateVenueRequest'
+            example:
+              organizationId: 1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed
+              name: Кофейня «Зерно» на Садовой
+              address: Ростов-на-Дону, ул. Большая Садовая, 10
+              type: COFFEE_SHOP
+              workingHours: 08:00-22:00
+      responses:
+        '201':
+          description: Заведение создано
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Venue'
+              example: *id001
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/IdempotencyConflict'
+  /api/v1/venues/{venueId}:
+    get:
+      operationId: getVenue
+      summary: Карточка заведения
+      tags:
+      - public
+      parameters:
+      - &id003
+        in: path
+        name: venueId
+        required: true
+        schema: *id002
+      responses:
+        '200':
+          description: Заведение
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Venue'
+              example: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/venues/{venueId}/deactivate:
+    post:
+      operationId: deactivateVenue
+      summary: Отключить заведение (закрытие точки)
+      tags:
+      - public
+      description: Публикует событие venue.deactivated — device-service отзывает устройства точки.
+      parameters:
+      - *id003
+      responses:
+        '200':
+          description: Заведение отключено, опубликовано venue.deactivated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Venue'
+              example:
+                id: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                organizationId: 1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed
+                name: Кофейня «Зерно» на Садовой
+                address: Ростов-на-Дону, ул. Большая Садовая, 10
+                type: COFFEE_SHOP
+                timezone: Europe/Moscow
+                workingHours: 08:00-22:00
+                status: DEACTIVATED
+                createdAt: '2026-11-20T10:15:30Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v1/venues/{venueId}/menu:
+    get:
+      operationId: getMenu
+      summary: Меню заведения
+      tags:
+      - public
+      parameters:
+      - *id003
+      responses:
+        '200':
+          description: Позиции меню
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MenuItem'
+              example: &id006
+              - &id004
+                id: 0d6e1f4a-2b6c-4f3e-9a51-6c0b7e1d2a33
+                name: Раф лавандовый
+                category: Кофе
+                aliases:
+                - лавандовый раф
+                price: 320
+                available: false
+              - id: 5e1c2d3b-7a8f-4e6d-9c0b-1a2b3c4d5e6f
+                name: Круассан миндальный
+                category: Выпечка
+                aliases: []
+                price: 190
+                available: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: addMenuItem
+      summary: Добавить позицию меню
+      tags:
+      - public
+      parameters:
+      - *id003
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertMenuItemRequest'
+            example:
+              name: Раф лавандовый
+              category: Кофе
+              aliases:
+              - лавандовый раф
+              price: 320
+              available: true
+      responses:
+        '201':
+          description: Позиция добавлена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MenuItem'
+              example: *id004
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/venues/{venueId}/menu/{itemId}:
+    put:
+      operationId: updateMenuItem
+      summary: Изменить позицию (в т.ч. наличие)
+      tags:
+      - public
+      parameters:
+      - *id003
+      - in: path
+        name: itemId
+        required: true
+        schema: *id002
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertMenuItemRequest'
+            example:
+              name: Раф лавандовый
+              category: Кофе
+              available: false
+      responses:
+        '200':
+          description: Позиция обновлена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MenuItem'
+              example: *id004
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /internal/v1/venues/{venueId}:
+    get:
+      operationId: internalGetVenue
+      summary: Заведение для других сервисов (device, report)
+      tags:
+      - internal
+      parameters:
+      - *id003
+      security: &id005
+      - serviceAuth: []
+      responses:
+        '200':
+          description: Заведение
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Venue'
+              example: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /internal/v1/venues/{venueId}/menu:
+    get:
+      operationId: internalGetMenu
+      summary: Меню с синонимами для analysis-service
+      tags:
+      - internal
+      parameters:
+      - *id003
+      security: *id005
+      responses:
+        '200':
+          description: Позиции меню
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MenuItem'
+              example: *id006
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access-токен Keycloak (OpenID Connect). Проверяется на API Gateway.
+    serviceAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Токен сервисной учётной записи Keycloak (client credentials) для internal-вызовов.
+    deviceAuth:
+      type: apiKey
+      in: header
+      name: X-Device-Token
+      description: Секрет устройства, выданный device-service при активации.
+  parameters:
+    Page:
+      in: query
+      name: page
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+      description: Номер страницы (с 0)
+    Size:
+      in: query
+      name: size
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+      description: Размер страницы
+    IdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      required: true
+      schema: *id002
+      description: 'Ключ идемпотентности: повтор с тем же ключом вернёт исходный результат, не создавая дубль'
+  responses:
+    BadRequest:
+      description: Некорректный запрос
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://talksense.local/problems/validation-error
+            title: Validation error
+            status: 400
+            detail: Поле name обязательно
+            traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+    Unauthorized:
+      description: Нет или неверный токен
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://talksense.local/problems/unauthorized
+            title: Unauthorized
+            status: 401
+            detail: Bearer-токен отсутствует или истёк
+            traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+    Forbidden:
+      description: Недостаточно прав
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://talksense.local/problems/forbidden
+            title: Forbidden
+            status: 403
+            detail: Нет доступа к заведению
+            traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+    NotFound:
+      description: Не найдено
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://talksense.local/problems/not-found
+            title: Not found
+            status: 404
+            detail: Объект не найден
+            traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+    Conflict:
+      description: Конфликт состояния
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://talksense.local/problems/conflict
+            title: Conflict
+            status: 409
+            detail: Операция недопустима в текущем состоянии
+            traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+    IdempotencyConflict:
+      description: Idempotency-Key уже использован с другим телом запроса
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://talksense.local/problems/idempotency-key-reuse
+            title: Idempotency key reuse
+            status: 422
+            detail: Ключ использован ранее с другим содержимым запроса
+            traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+  schemas:
+    Problem:
+      type: object
+      description: Единая модель ошибки во всех сервисах (RFC 9457 / RFC 7807 Problem Details).
+      required:
+      - type
+      - title
+      - status
+      properties:
+        type:
+          type: string
+          format: uri
+          example: https://talksense.local/problems/not-found
+        title:
+          type: string
+          example: Ресурс не найден
+        status:
+          type: integer
+          example: 404
+        detail:
+          type: string
+          example: Заведение 7c9e... не найдено
+        instance:
+          type: string
+          example: /api/v1/venues/7c9e6679-7425-40de-944b-e07fc1f90ae7
+        traceId:
+          type: string
+          example: 4bf92f3577b34da6a3ce929d0e0e4736
+        errors:
+          type: array
+          description: Ошибки валидации по полям (для 400/422)
+          items:
+            type: object
+            required:
+            - field
+            - message
+            properties:
+              field:
+                type: string
+              message:
+                type: string
+    PageMeta:
+      type: object
+      required:
+      - page
+      - size
+      - totalElements
+      - totalPages
+      properties:
+        page:
+          type: integer
+          minimum: 0
+          example: 0
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+          example: 20
+        totalElements:
+          type: integer
+          example: 42
+        totalPages:
+          type: integer
+          example: 3
+    EventEnvelope:
+      type: object
+      description: Конверт всех асинхронных сообщений. Полезная нагрузка — в payload.
+      required:
+      - eventId
+      - eventType
+      - schemaVersion
+      - occurredAt
+      - correlationId
+      - producer
+      - payload
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: Уникален для сообщения; потребители хранят обработанные eventId (дедупликация)
+        eventType:
+          type: string
+          example: recording.uploaded
+        schemaVersion:
+          type: integer
+          example: 1
+        occurredAt: &id007
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+          format: uuid
+          description: Сквозной идентификатор саги = recordingId
+        producer:
+          type: string
+          example: recording-service
+        payload:
+          type: object
+    Venue:
+      type: object
+      required:
+      - id
+      - organizationId
+      - name
+      - address
+      - timezone
+      - status
+      properties:
+        id: *id002
+        organizationId: *id002
+        name:
+          type: string
+          example: Кофейня «Зерно» на Садовой
+        address:
+          type: string
+          example: Ростов-на-Дону, ул. Большая Садовая, 10
+        type:
+          type: string
+          enum:
+          - COFFEE_SHOP
+          - BAKERY
+          - RESTAURANT
+          - SHOP
+          - OTHER
+        timezone:
+          type: string
+          example: Europe/Moscow
+        workingHours:
+          type: string
+          example: 08:00-22:00
+        status:
+          type: string
+          enum:
+          - ACTIVE
+          - DEACTIVATED
+        createdAt: *id007
+    CreateVenueRequest:
+      type: object
+      required:
+      - organizationId
+      - name
+      - address
+      properties:
+        organizationId: *id002
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        address:
+          type: string
+          maxLength: 500
+        type:
+          type: string
+          enum:
+          - COFFEE_SHOP
+          - BAKERY
+          - RESTAURANT
+          - SHOP
+          - OTHER
+        timezone:
+          type: string
+          default: Europe/Moscow
+        workingHours:
+          type: string
+    MenuItem:
+      type: object
+      required:
+      - id
+      - name
+      - category
+      - available
+      properties:
+        id: *id002
+        name:
+          type: string
+          example: Раф лавандовый
+        category:
+          type: string
+          example: Кофе
+        aliases:
+          type: array
+          items:
+            type: string
+          example:
+          - лавандовый раф
+          - раф с лавандой
+          description: Разговорные названия — помогают ИИ сопоставить реплику с позицией
+        price:
+          type: number
+          example: 320
+        available:
+          type: boolean
+          description: Есть ли позиция в наличии сейчас
+    UpsertMenuItemRequest:
+      type: object
+      required:
+      - name
+      - category
+      properties:
+        name:
+          type: string
+        category:
+          type: string
+        aliases:
+          type: array
+          items:
+            type: string
+        price:
+          type: number
+          minimum: 0
+        available:
+          type: boolean
+          default: true
+    VenuePage:
+      type: object
+      required:
+      - items
+      - page
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Venue'
+        page:
+          $ref: '#/components/schemas/PageMeta'
+    VenueDeactivatedEvent:
+      type: object
+      description: 'Публикуется в exchange talksense.events (routing key venue.deactivated). Подписчик: device-service.'
+      required:
+      - eventId
+      - eventType
+      - schemaVersion
+      - occurredAt
+      - correlationId
+      - producer
+      - payload
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: Уникален для сообщения; потребители хранят обработанные eventId (дедупликация)
+        eventType:
+          type: string
+          enum:
+          - venue.deactivated
+        schemaVersion:
+          type: integer
+          example: 1
+        occurredAt:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+          format: uuid
+          description: Сквозной идентификатор саги = recordingId
+        producer:
+          type: string
+          example: recording-service
+        payload:
+          type: object
+          required:
+          - venueId
+          properties:
+            venueId: *id002
+            organizationId: *id002
+            reason:
+              type: string
+              example: Точка закрыта
