@@ -127,7 +127,7 @@ def finalize(answer: LlmAnswer, menu: list[dict]) -> dict:
         item = match_menu_item(inc.requestedItem, menu) if inc.type in ("OUT_OF_STOCK", "MENU_REQUEST") else None
         t = inc.type
         if t == "MENU_REQUEST" and item is not None:
-            t = "OUT_OF_STOCK"   # позиция в меню есть — значит, её не было в наличии
+            t = "MENU_REQUEST"   # позиция в меню есть — значит, её не было в наличии
         elif t == "OUT_OF_STOCK" and item is None and inc.requestedItem:
             t = "MENU_REQUEST"   # такой позиции в меню нет — это запрос на добавление
         incidents.append({**inc.model_dump(), "type": t, "menuItemId": item["id"] if item else None,
